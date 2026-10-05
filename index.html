@@ -11629,7 +11629,7 @@ let _cronoEditId = null;
 function _seedProcessosBP(){
   // Migração aditiva: só adiciona processos que não existem ainda (nunca sobrescreve)
   // Se já tem dados do Firebase, respeita — só adiciona os que faltam
-  if(!localStorage.getItem('_pop_seed_additive_v5')){
+  if(!localStorage.getItem('_pop_seed_additive_v6')){
     var _seedProcessos = [
       {id:uid(),nome:'Desligamentos Voluntários',descricao:'Processo completo para desligamentos voluntários (pedido de demissão). O colaborador comunica o líder e envia e-mail ao RH informando interesse em sair e último dia de trabalho.',categoria:'Desligamento',areas:['Contábil','Fiscal','Folha'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
         {nome:'Colaborador comunica líder e envia e-mail ao RH',dia:0,descricao:'O colaborador comunica o líder sobre o desligamento e, obrigatoriamente no mesmo momento, envia e-mail para rh.planning@planning.com.br comunicando o interesse em sair da empresa e informando o último dia de trabalho.'},
@@ -11709,9 +11709,11 @@ function _seedProcessosBP(){
         {nome:'BP encaminha ao DP',dia:20,descricao:'A BP compila todas as promoções aprovadas e encaminha ao DP até o dia 20, para as alterações na folha de pagamento.'},
         {nome:'BP retorna ao líder',dia:25,descricao:'Até o dia 25, a BP retorna a decisão ao líder. Em caso de reprovação, comunica a justificativa — o líder pode reabrir após 30 dias com nova aprovação do Head.'},
         {nome:'Líder comunica ao colaborador com cartinha',dia:0,descricao:'A comunicação só acontece após retorno da BP. Cartinhas disponíveis na sala do GG (presencial) ou versão digital (home office). O líder escolhe o momento e formato, desde que seja antes do colaborador receber o novo salário.'},
+        {nome:'BP atualiza cargo e salário na Qulture.Rocks',dia:0,descricao:'Até o último dia útil do mês, a BP atualiza na Qulture.Rocks as informações do colaborador promovido/progredido: novo cargo, novo salário e data de vigência. Essa atualização é essencial para manter os dados corretos nas avaliações de desempenho e gestão de pessoas.'},
         {nome:'GG consolida e envia à TI',dia:0,descricao:'O GG consolida a lista de movimentações aprovadas até o último dia útil do mês e envia à TI para alterações nos sistemas.'}
       ],alertas:[
         'Solicitação deve ser aberta até o dia 10 para vigência no mês corrente.',
+        'BP deve atualizar cargo e salário na Qulture.Rocks até o último dia útil do mês.',
         '⚠ SIGILO: O colaborador NÃO deve ser informado antes do retorno oficial da BP. Comunicação antecipada gera expectativa indevida.',
         'Pré-requisitos obrigatórios: 3 meses desde última movimentação, 1:1 mensal, PDI com 3 ações concluídas, avaliação satisfatória.',
         'Aprovação do Head é obrigatória ANTES de abrir o formulário.',
@@ -11730,9 +11732,11 @@ function _seedProcessosBP(){
         {nome:'BP retorna ao líder até dia 25',dia:25,descricao:'Até o dia 25, a BP retorna a decisão ao líder. Em caso de aprovação, comunica o valor final. Em caso de reprovação, informa a justificativa — nova solicitação após 30 dias.'},
         {nome:'Líder confirma valor final — aceite definitivo',dia:0,descricao:'Com o valor final aprovado pelos Sócios, o líder confirma com o colaborador, que dá o aceite definitivo.'},
         {nome:'Aviso trabalhado + reunião com DP',dia:0,descricao:'O colaborador cumpre aviso trabalhado no mês seguinte (regime CLT). O DP conduz reunião sobre: rescisão CLT, documentos PJ, termos do contrato (valor, vigência, escopo), verbas rescisórias, datas e procedimentos. ⚠ Migração encerra benefícios CLT (ajuda de custo, plano de saúde, FGTS, 13º, férias remuneradas).'},
+        {nome:'BP atualiza cargo e salário na Qulture.Rocks',dia:0,descricao:'Até o último dia útil do mês da migração, a BP atualiza na Qulture.Rocks as informações do colaborador: novo cargo (Especialista/Coordenador), novo valor (contrato PJ) e regime atualizado. Essa atualização é essencial para manter os dados corretos nas avaliações de desempenho e gestão de pessoas.'},
         {nome:'Contrato PJ inicia',dia:0,descricao:'Após término do aviso trabalhado e zeramento de banco de horas, inicia o contrato PJ. O colaborador deve ter CNPJ ativo para validação do contrato.'}
       ],alertas:[
         'Solicitação até dia 10 para vigência no mês.',
+        'BP deve atualizar cargo e salário na Qulture.Rocks até o último dia útil do mês.',
         '⚠ Aprovação do Head é obrigatória ANTES de qualquer conversa com o colaborador.',
         '⚠ Sequência obrigatória: Head → BP → colaborador. Combinar antes gera expectativa indevida.',
         'Banco de horas deve ser ZERADO antes do início do PJ. Aviso deve ser TRABALHADO (não indenizado).',
@@ -11755,6 +11759,7 @@ function _seedProcessosBP(){
         {nome:'BP retorna ao líder até dia 25',dia:25,descricao:'Até o dia 25, a BP retorna a decisão ao líder. ⚠ O estagiário NÃO deve ser informado antes deste retorno.'},
         {nome:'Líder comunica ao estagiário',dia:0,descricao:'Somente após retorno formal da BP. Comunicação com cartinha (presencial no GG ou versão digital para home office).'},
         {nome:'DP envia guias + exames',dia:0,descricao:'O DP envia guia demissional do estágio e guia admissional CLT. Exames demissional e admissional devem ser realizados até 5 dias úteis antes do início do CLT.'},
+        {nome:'BP atualiza cargo e salário na Qulture.Rocks',dia:0,descricao:'Até o último dia útil do mês, a BP atualiza na Qulture.Rocks as informações do novo colaborador CLT: cargo Auxiliar, salário R$ 1.900,00 e data de início. Essa atualização é essencial para manter os dados corretos nas avaliações de desempenho e gestão de pessoas.'},
         {nome:'CLT inicia no 1º dia útil do mês seguinte',dia:0,descricao:'O estagiário passa a ser Auxiliar CLT com remuneração de R$ 1.900,00 e benefícios: ajuda de custo iFood R$ 500/mês, plano de saúde após 3 meses, seguro de vida, day off aniversário, Wellhub, Starbem, Avus. Bônus por desempenho (até R$ 200/mês) exclusivo para Contábil, Fiscal e Folha.'}
       ],alertas:[
         'Solicitação até dia 10 para efetivação no mês seguinte.',
@@ -11762,6 +11767,7 @@ function _seedProcessosBP(){
         '⚠ Horas extras são PROIBIDAS para estagiários (Lei 11.788/2008). Não serão pagas na rescisão.',
         'Prazo máximo de estágio: 2 anos. Ao atingir sem efetivação, contrato encerrado automaticamente.',
         'Vaga no Pandapé (Auxiliar, R$ 1.900) deve ser aberta e aprovada ANTES do formulário de movimentação.',
+        'BP deve atualizar cargo e salário na Qulture.Rocks até o último dia útil do mês.',
         'Exames devem ser realizados até 5 dias úteis antes do início do CLT.',
         'Renovação do estágio só é possível com matrícula ativa na faculdade.'
       ],observacoes:'Cargo de destino: Auxiliar (R$ 1.900,00) para todas as efetivações. Movimentações para cargos superiores seguem o POP-GG-003 após a efetivação. Exemplo: Solicitação até 10/06 → CLT em 01/07.',links:[],
@@ -11828,7 +11834,7 @@ function _seedProcessosBP(){
     if(adicionou){
       persist('processosBP');
     }
-    localStorage.setItem('_pop_seed_additive_v5','1');
+    localStorage.setItem('_pop_seed_additive_v6','1');
   }
 }
 
@@ -11856,6 +11862,29 @@ function _migrateDesligamentosPOP(){}
       }
     }
     localStorage.setItem('_mig_efetivacao_consulta_v1','1');
+  }
+})();
+
+// Migração: adicionar etapa Qulture.Rocks nos processos existentes
+(function(){
+  if(!localStorage.getItem('_mig_qulture_rocks_v1')){
+    var nomes = ['Progressões e Promoções','Migração CLT para PJ','Efetivação de Estagiários'];
+    var etapaQR = {nome:'BP atualiza cargo e salário na Qulture.Rocks',dia:0,descricao:'Até o último dia útil do mês, a BP atualiza na Qulture.Rocks as informações do colaborador: novo cargo, novo salário e data de vigência. Essa atualização é essencial para manter os dados corretos nas avaliações de desempenho e gestão de pessoas.'};
+    var changed = false;
+    nomes.forEach(function(n){
+      var proc = (DB.processosBP||[]).find(function(p){ return p.nome===n; });
+      if(proc){
+        var ja = proc.etapas.some(function(e){ return e.nome.indexOf('Qulture.Rocks')!==-1; });
+        if(!ja){
+          proc.etapas.splice(proc.etapas.length-1,0,etapaQR);
+          if(!proc.alertas) proc.alertas=[];
+          proc.alertas.push('BP deve atualizar cargo e salário na Qulture.Rocks até o último dia útil do mês.');
+          changed = true;
+        }
+      }
+    });
+    if(changed) persist('processosBP');
+    localStorage.setItem('_mig_qulture_rocks_v1','1');
   }
 })();
 
