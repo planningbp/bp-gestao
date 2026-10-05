@@ -11629,7 +11629,7 @@ let _cronoEditId = null;
 function _seedProcessosBP(){
   // Migração aditiva: só adiciona processos que não existem ainda (nunca sobrescreve)
   // Se já tem dados do Firebase, respeita — só adiciona os que faltam
-  if(!localStorage.getItem('_pop_seed_additive_v4')){
+  if(!localStorage.getItem('_pop_seed_additive_v5')){
     var _seedProcessos = [
       {id:uid(),nome:'Desligamentos Voluntários',descricao:'Processo completo para desligamentos voluntários (pedido de demissão). O colaborador comunica o líder e envia e-mail ao RH informando interesse em sair e último dia de trabalho.',categoria:'Desligamento',areas:['Contábil','Fiscal','Folha'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
         {nome:'Colaborador comunica líder e envia e-mail ao RH',dia:0,descricao:'O colaborador comunica o líder sobre o desligamento e, obrigatoriamente no mesmo momento, envia e-mail para rh.planning@planning.com.br comunicando o interesse em sair da empresa e informando o último dia de trabalho.'},
@@ -11792,6 +11792,28 @@ function _seedProcessosBP(){
       msgLider:'Olá {nome},\n\nSobre a abertura de vaga que conversamos:\n\nAntes de abrir no Pandapé, verifique os pré-requisitos:\n1. Alinhamento com o Head concluído\n2. Motivo da contratação definido (reposição ou aumento de quadro)\n3. Faixa salarial validada com o Head e dentro do orçamento\n4. Espaço físico e equipamento confirmados\n5. Perfil do candidato e principais atividades definidos\n\nApós verificar, abra a vaga no Pandapé preenchendo todos os campos obrigatórios (área, departamento, regime, nível, faixa salarial, motivo, líder direto, formato de trabalho, atividades, requisitos, espaço/equipamento e se deseja folder).\n\nLembre-se:\n• Justificativa é obrigatória para qualquer tipo de vaga\n• Se substituição, informe o motivo e o colaborador substituído\n• Retorno sobre perfis enviados pela recrutadora em até 2 dias úteis\n• Sem retorno no prazo, o envio de novos perfis será suspenso\n\nQualquer dúvida, estou à disposição.',
       msgColab:'',
       msgFormal:'',
+      ativo:true},
+      {id:uid(),nome:'Movimentação entre Áreas (Remanejamento)',descricao:'Procedimento para remanejamento de colaboradores entre áreas da Planning. Aplica-se quando um colaborador está disponível para transferência — seja por incompatibilidade com o líder atual, conhecimento abaixo do necessário para a posição ou outras razões — e há interesse de outra área em recebê-lo.',categoria:'Movimentação',areas:['Contábil','Fiscal','Folha','BPO Financeiro','Financeiro Interno','Controladoria','TI','Desenvolvedores','Comercial','Marketing','Expansão','Consultoria'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
+        {nome:'BP identifica colaborador disponível para remanejamento',dia:0,descricao:'A BP da área identifica que um colaborador está disponível para remanejamento. Motivos possíveis: incompatibilidade com o líder atual, conhecimento abaixo do necessário para a posição, reestruturação da equipe ou outros. A BP deve reunir informações relevantes sobre o caso (cargo, competências, motivo da disponibilidade, histórico de desempenho).'},
+        {nome:'BP comunica no grupo das BPs',dia:0,descricao:'A BP envia mensagem no grupo das BPs informando que o colaborador está disponível para remanejamento. A mensagem deve conter: nome do colaborador, cargo atual, área atual, motivo da disponibilidade, principais competências e pontos de atenção. ⚠ Manter sigilo — o colaborador NÃO deve ser informado neste momento.'},
+        {nome:'BPs avaliam interesse das suas equipes',dia:0,descricao:'As demais BPs avaliam se o perfil do colaborador faz sentido para alguma de suas equipes, consultando os líderes das áreas que possam ter interesse. Se houver interesse, a BP interessada sinaliza no grupo.'},
+        {nome:'BP comunica o colaborador sobre a possível mudança',dia:0,descricao:'Havendo interesse de outra área, as BPs envolvidas (origem e destino) comunicam o colaborador sobre a possibilidade de mudança. A conversa deve ser transparente sobre o motivo e a oportunidade, sem pressionar a decisão.'},
+        {nome:'Novo líder conversa com o colaborador',dia:0,descricao:'O possível novo líder agenda uma conversa com o colaborador para entender se a mudança faz sentido para ambos. Devem ser abordados: expectativas da nova função, rotina da equipe, metas e desafios. O colaborador deve manifestar aceite para prosseguir.'},
+        {nome:'Alinhamento com DP sobre data de transição e CNPJ',dia:0,descricao:'Fazendo sentido para ambas as partes, a BP alinha com o DP a data de transição. O DP verifica se há necessidade de alteração de CNPJ (mudança de empresa/filial). Se houver necessidade de troca de CNPJ, o DP orienta sobre os procedimentos de rescisão e readmissão.'},
+        {nome:'Novo líder abre chamado no Acessórias (se não mudar CNPJ)',dia:0,descricao:'Não havendo necessidade de alteração de CNPJ, o novo líder deve abrir um chamado no Acessórias solicitando a alteração do líder anterior para ele. Isso garante as devidas atualizações na Qulture.Rocks (gestor, equipe) e no Secullum (ponto, escalas). O chamado deve conter: nome do colaborador, líder anterior, novo líder, data efetiva da mudança.'},
+        {nome:'BP atualiza registros e acompanha adaptação',dia:0,descricao:'A BP atualiza a planilha de controle com a nova alocação do colaborador. Nos primeiros 30 dias, a BP acompanha a adaptação com o novo líder, verificando se o remanejamento está funcionando para ambas as partes.'}
+      ],alertas:[
+        'O colaborador NÃO deve ser informado antes de haver interesse concreto de outra área.',
+        'A comunicação no grupo das BPs deve ser detalhada para permitir avaliação adequada.',
+        'O colaborador deve manifestar aceite — remanejamento não é imposição.',
+        'Verificar com o DP se há necessidade de alteração de CNPJ ANTES de definir a data.',
+        'Se houver troca de CNPJ, o processo segue como rescisão + readmissão (alinhar com DP).',
+        'Chamado no Acessórias é obrigatório para atualização de Qulture.Rocks e Secullum.',
+        'Acompanhar adaptação do colaborador nos primeiros 30 dias após a mudança.'
+      ],observacoes:'Este processo é para remanejamentos internos sem promoção ou alteração salarial. Se houver promoção envolvida, seguir o POP-GG-003 (Progressões e Promoções). Se houver alteração de CNPJ, o DP conduz como rescisão e readmissão — a BP deve acompanhar de perto.',links:[],
+      msgLider:'Olá {nome},\n\nIdentificamos uma oportunidade de remanejamento para a sua equipe.\n\nUm colaborador de outra área está disponível para transferência e o perfil pode ser compatível com as necessidades do seu time.\n\nPróximos passos:\n1. Avalie se o perfil faz sentido para a sua equipe\n2. Se houver interesse, agende uma conversa com o colaborador\n3. Na conversa, alinhe expectativas da função, rotina e metas\n4. Se ambos concordarem, me informe para alinharmos a data com o DP\n5. Após confirmação, abra chamado no Acessórias para atualização de líder na Qulture.Rocks e Secullum\n\nQualquer dúvida, estou à disposição.',
+      msgColab:'Olá {nome},\n\nGostaríamos de conversar com você sobre uma possibilidade de mudança de área aqui na Planning.\n\nIdentificamos uma oportunidade que pode ser interessante para o seu desenvolvimento profissional. Gostaríamos de agendar uma conversa para apresentar a proposta e entender se faz sentido para você.\n\nEssa conversa é para alinhar expectativas — nenhuma decisão será tomada sem o seu aceite.\n\nPodemos conversar?',
+      msgFormal:'',
       ativo:true}
     ];
     // Só adiciona processos cujo nome ainda não existe no DB
@@ -11806,7 +11828,7 @@ function _seedProcessosBP(){
     if(adicionou){
       persist('processosBP');
     }
-    localStorage.setItem('_pop_seed_additive_v4','1');
+    localStorage.setItem('_pop_seed_additive_v5','1');
   }
 }
 
