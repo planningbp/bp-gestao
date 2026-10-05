@@ -11809,14 +11809,16 @@ function _seedProcessosBP(){
         {nome:'Novo líder conversa com o colaborador',dia:0,descricao:'O possível novo líder agenda uma conversa com o colaborador para entender se a mudança faz sentido para ambos. Devem ser abordados: expectativas da nova função, rotina da equipe, metas e desafios. O colaborador deve manifestar aceite para prosseguir.'},
         {nome:'Alinhamento com DP sobre data de transição e CNPJ',dia:0,descricao:'Fazendo sentido para ambas as partes, a BP alinha com o DP a data de transição. O DP verifica se há necessidade de alteração de CNPJ (mudança de empresa/filial). Se houver necessidade de troca de CNPJ, o DP orienta sobre os procedimentos de rescisão e readmissão.'},
         {nome:'Novo líder abre chamado no Acessórias (se não mudar CNPJ)',dia:0,descricao:'Não havendo necessidade de alteração de CNPJ, o novo líder deve abrir um chamado no Acessórias solicitando a alteração do líder anterior para ele. Isso garante as devidas atualizações na Qulture.Rocks (gestor, equipe) e no Secullum (ponto, escalas). O chamado deve conter: nome do colaborador, líder anterior, novo líder, data efetiva da mudança.'},
-        {nome:'BP atualiza registros e acompanha adaptação',dia:0,descricao:'A BP atualiza a planilha de controle com a nova alocação do colaborador. Nos primeiros 30 dias, a BP acompanha a adaptação com o novo líder, verificando se o remanejamento está funcionando para ambas as partes.'}
+        {nome:'BP atualiza Qulture.Rocks e encaminha ao DP',dia:0,descricao:'A BP faz as devidas alterações na Qulture.Rocks (novo líder, nova equipe, novo cargo se aplicável) e encaminha ao DP para as alterações nos demais sistemas (Secullum, folha, etc.). Se houver mudança de CNPJ, a movimentação deve ser registrada na planilha de transferências para o DP providenciar rescisão e readmissão.'},
+        {nome:'BP acompanha adaptação (30 dias)',dia:0,descricao:'Nos primeiros 30 dias após a mudança, a BP acompanha a adaptação com o novo líder, verificando se o remanejamento está funcionando para ambas as partes.'}
       ],alertas:[
         'O colaborador NÃO deve ser informado antes de haver interesse concreto de outra área.',
         'A comunicação no grupo das BPs deve ser detalhada para permitir avaliação adequada.',
         'O colaborador deve manifestar aceite — remanejamento não é imposição.',
         'Verificar com o DP se há necessidade de alteração de CNPJ ANTES de definir a data.',
-        'Se houver troca de CNPJ, o processo segue como rescisão + readmissão (alinhar com DP).',
-        'Chamado no Acessórias é obrigatório para atualização de Qulture.Rocks e Secullum.',
+        'Se houver troca de CNPJ, registrar na planilha de transferências para o DP.',
+        'Chamado no Acessórias é obrigatório quando NÃO houver mudança de CNPJ.',
+        'BP deve atualizar Qulture.Rocks e encaminhar ao DP para alterações nos demais sistemas.',
         'Acompanhar adaptação do colaborador nos primeiros 30 dias após a mudança.'
       ],observacoes:'Este processo é para remanejamentos internos sem promoção ou alteração salarial. Se houver promoção envolvida, seguir o POP-GG-003 (Progressões e Promoções). Se houver alteração de CNPJ, o DP conduz como rescisão e readmissão — a BP deve acompanhar de perto.',links:[],
       msgLider:'Olá {nome},\n\nIdentificamos uma oportunidade de remanejamento para a sua equipe.\n\nUm colaborador de outra área está disponível para transferência e o perfil pode ser compatível com as necessidades do seu time.\n\nPróximos passos:\n1. Avalie se o perfil faz sentido para a sua equipe\n2. Se houver interesse, agende uma conversa com o colaborador\n3. Na conversa, alinhe expectativas da função, rotina e metas\n4. Se ambos concordarem, me informe para alinharmos a data com o DP\n5. Após confirmação, abra chamado no Acessórias para atualização de líder na Qulture.Rocks e Secullum\n\nQualquer dúvida, estou à disposição.',
