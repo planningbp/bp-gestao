@@ -11629,7 +11629,7 @@ let _cronoEditId = null;
 function _seedProcessosBP(){
   // Migração aditiva: só adiciona processos que não existem ainda (nunca sobrescreve)
   // Se já tem dados do Firebase, respeita — só adiciona os que faltam
-  if(!localStorage.getItem('_pop_seed_additive_v3')){
+  if(!localStorage.getItem('_pop_seed_additive_v4')){
     var _seedProcessos = [
       {id:uid(),nome:'Desligamentos Voluntários',descricao:'Processo completo para desligamentos voluntários (pedido de demissão). O colaborador comunica o líder e envia e-mail ao RH informando interesse em sair e último dia de trabalho.',categoria:'Desligamento',areas:['Contábil','Fiscal','Folha'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
         {nome:'Colaborador comunica líder e envia e-mail ao RH',dia:0,descricao:'O colaborador comunica o líder sobre o desligamento e, obrigatoriamente no mesmo momento, envia e-mail para rh.planning@planning.com.br comunicando o interesse em sair da empresa e informando o último dia de trabalho.'},
@@ -11768,6 +11768,30 @@ function _seedProcessosBP(){
       msgLider:'Olá {nome},\n\nSobre a efetivação do estagiário que conversamos:\n\nAntes de abrir a solicitação, verifique os pré-requisitos:\n1. Tempo de estágio acima de 3 meses\n2. Registros de 1:1 mensais ao longo do estágio\n3. PDI com pelo menos 3 planos de ação concluídos\n4. Ausência de horas extras registradas\n5. Aprovação do Head\n6. Consulta ao estagiário — converse com ele sobre a efetivação: carga horária (jornada CLT integral), remuneração (R$ 1.900,00 como Auxiliar) e benefícios. O estagiário precisa manifestar aceite antes de prosseguir.\n\nApós verificar e obter o aceite do estagiário, abra a vaga no Pandapé (Auxiliar, R$ 1.900,00, tipo Aumento de Custo) e depois o formulário de Solicitação de Movimentação até o dia 10.\n\n⚠ A decisão final (aprovação/reprovação) não deve ser comunicada antes do meu retorno (até dia 25).',
       msgColab:'Olá {nome},\n\nTemos uma ótima notícia! Seu desempenho durante o estágio foi reconhecido e estamos felizes em comunicar sua efetivação na Planning.\n\nA partir do próximo mês, você passa a integrar o quadro CLT como Auxiliar, com remuneração de R$ 1.900,00.\n\nBenefícios CLT:\n• Ajuda de custo (iFood): R$ 500/mês\n• Plano de saúde: após 3 meses\n• Seguro de vida\n• Day off no aniversário\n• Wellhub, Starbem e Avus\n\nO DP entrará em contato para os procedimentos de transição (guias e exames).\n\nParabéns e bem-vindo(a) ao time!',
       msgFormal:'',
+      ativo:true},
+      {id:uid(),nome:'Abertura e Aprovação de Vagas',descricao:'POP-GG-001 — Procedimento padrão para abertura e aprovação de vagas na Planning. Abrange vagas de reposição e aumento de quadro/custo, nos regimes CLT, PJ e Estágio. Garante fluxo estruturado com responsáveis definidos, critérios claros e alinhamentos prévios entre líderes, áreas e aprovadores.',categoria:'Recrutamento',areas:['Contábil','Fiscal','Folha','BPO Financeiro','Financeiro Interno','Controladoria','TI','Desenvolvedores','Comercial','Marketing','Expansão','Consultoria'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
+        {nome:'Coordenador/Gerente alinha necessidade com Head',dia:0,descricao:'Alinhamento obrigatório ANTES de abrir vaga no Pandapé. Abordar: motivo da contratação (reposição ou aumento de quadro), perfil ideal e principais atividades, faixa salarial proposta (dentro do padrão e orçamento), formato de trabalho (presencial/híbrido/home office) e unidade de atuação. ⚠ Sem alinhamento prévio, o Coordenador não deve iniciar a abertura no sistema.'},
+        {nome:'Coordenador/Gerente abre vaga no Pandapé',dia:0,descricao:'Responsabilidade EXCLUSIVA do Coordenador ou Gerente. Campos obrigatórios: Área, Departamento, Especialização, Regime de contratação, Nível hierárquico, Faixa salarial, Motivo da contratação, E-mail do líder direto, Formato de trabalho, Principais atividades, Requisitos técnicos e comportamentais, Espaço físico na unidade, Equipamento (Planning ou próprio), Folder para divulgação (sim/não). Se substituição: informar motivo e colaborador substituído. ⚠ Justificativa obrigatória independente do tipo de vaga. Não tem acesso ao Pandapé? Procure Barbara Franco.'},
+        {nome:'Head aprova no Pandapé',dia:5,descricao:'O Head da área valida a necessidade e aprova a vaga diretamente no Pandapé. Prazo: até 5 dias úteis. ⚠ Todas as aprovações são feitas dentro do Pandapé — não há aprovações paralelas por e-mail ou outros canais.'},
+        {nome:'Sócio aprova no Pandapé (+ Financeiro se aumento de custo)',dia:5,descricao:'O Sócio da área aprova no Pandapé. Em caso de aumento de quadro/custo, o Diretor Financeiro/Controladoria também aprova sob a ótica financeira. Prazo: até 5 dias úteis por etapa. Para reposição sem aumento de custo, esta etapa passa direto para GG após aprovação do Head.'},
+        {nome:'GG valida dados e conformidade salarial',dia:0,descricao:'Gente e Gestão valida os dados cadastrais, conformidade com a tabela salarial vigente e completude dos campos obrigatórios. Após validação, a vaga é direcionada para a recrutadora responsável pela área.'},
+        {nome:'Recrutadora comunica líder e inicia processo seletivo',dia:0,descricao:'A recrutadora comunica o líder sobre o início do processo, agenda alinhamento (se necessário) e inicia busca, triagem e demais etapas. Quando solicitado, o GG produz o folder de divulgação em até 5 dias úteis.'},
+        {nome:'Líder e recrutadora conduzem a seleção',dia:0,descricao:'Processo seletivo conduzido de forma compartilhada entre recrutadora, líder direto e requisitante. Todo perfil apresentado deve ter retorno em até 2 dias úteis (aprovação, reprovação com justificativa ou ajuste de perfil). ⚠ Sem retorno em 2 dias úteis = envio de novos perfis suspenso. A recrutadora só retoma após o líder dar retorno sobre todos os perfis pendentes.'},
+        {nome:'Acompanhamento de prazos e stand-by',dia:0,descricao:'A recrutadora controla prazos e sinaliza stand-by quando necessário. Sem retorno no prazo, a vaga entra em stand-by por até 10 dias. Após 10 dias sem retorno, a vaga é cancelada. Vagas em aberto por mais de 60 dias sem movimentação devem ser revisadas pelo Head e BP para decisão sobre manutenção ou cancelamento.'}
+      ],alertas:[
+        'Alinhamento prévio com o Head é OBRIGATÓRIO antes de abrir vaga no Pandapé.',
+        'A abertura da vaga é responsabilidade EXCLUSIVA do Coordenador ou Gerente.',
+        'Todas as aprovações são feitas dentro do Pandapé — sem aprovações por e-mail.',
+        'Justificativa obrigatória independente do tipo de vaga.',
+        'Retorno sobre perfis em até 2 dias úteis — sem retorno, novos perfis não serão enviados.',
+        'Stand-by máximo de 10 dias úteis sem feedback — após, a vaga é cancelada.',
+        'Vagas urgentes: só podem ser solicitadas pelo Sócio da Área.',
+        'Vagas em aberto por mais de 60 dias sem movimentação devem ser revisadas.',
+        'Não tem acesso ao Pandapé? Procure Barbara Franco para cadastro.'
+      ],observacoes:'Fluxo de reposição: Coordenador abre → Head aprova → GG valida → Recrutadora inicia. Fluxo de aumento de custo: Coordenador abre → Head aprova → Sócio aprova → Financeiro aprova → GG valida → Recrutadora inicia. Prazo de até 5 dias úteis por etapa de aprovação. Folder de divulgação produzido pelo GG em até 5 dias úteis quando solicitado.',links:[],
+      msgLider:'Olá {nome},\n\nSobre a abertura de vaga que conversamos:\n\nAntes de abrir no Pandapé, verifique os pré-requisitos:\n1. Alinhamento com o Head concluído\n2. Motivo da contratação definido (reposição ou aumento de quadro)\n3. Faixa salarial validada com o Head e dentro do orçamento\n4. Espaço físico e equipamento confirmados\n5. Perfil do candidato e principais atividades definidos\n\nApós verificar, abra a vaga no Pandapé preenchendo todos os campos obrigatórios (área, departamento, regime, nível, faixa salarial, motivo, líder direto, formato de trabalho, atividades, requisitos, espaço/equipamento e se deseja folder).\n\nLembre-se:\n• Justificativa é obrigatória para qualquer tipo de vaga\n• Se substituição, informe o motivo e o colaborador substituído\n• Retorno sobre perfis enviados pela recrutadora em até 2 dias úteis\n• Sem retorno no prazo, o envio de novos perfis será suspenso\n\nQualquer dúvida, estou à disposição.',
+      msgColab:'',
+      msgFormal:'',
       ativo:true}
     ];
     // Só adiciona processos cujo nome ainda não existe no DB
@@ -11782,7 +11806,7 @@ function _seedProcessosBP(){
     if(adicionou){
       persist('processosBP');
     }
-    localStorage.setItem('_pop_seed_additive_v3','1');
+    localStorage.setItem('_pop_seed_additive_v4','1');
   }
 }
 
