@@ -3039,7 +3039,7 @@ function renderLiderRelatorio(ct){
   html += `<div class="card" style="margin-bottom:20px;">
     <div class="section-title">Acompanhamentos — Avaliações de Experiência (${acomp.length})</div>`;
   if(acomp.length){
-    const tipoOrder = {'7 dias':1,'15 dias':2,'30 dias':3,'45 dias':4,'60 dias':5,'90 dias':6};
+    const tipoOrder = {'7 dias':1,'20 dias':2,'30 dias':3,'45 dias':4,'60 dias':5,'90 dias':6};
     const acompSorted = acomp.slice().sort((a,b)=>{
       const na = normalizeStr(a.colaborador||''), nb = normalizeStr(b.colaborador||'');
       if(na!==nb) return na.localeCompare(nb);
@@ -6752,7 +6752,7 @@ function bindHistory(){
 function getAcompanhamentoRecords(){
   const bp = currentBP();
   const colabs = getMyColaboradores();
-  const milestones = [7,15,45,90];
+  const milestones = [7,20,45,90];
   const records = [];
   const today = new Date(); today.setHours(0,0,0,0);
   colabs.forEach(c=>{
@@ -8520,7 +8520,7 @@ function renderColaboradorDetail(){
   const acomps = DB.acompanhamentos.filter(a=> normalizeStr(a.nome)===normalizeStr(nome));
 
   // Milestones
-  const milestones = [7,15,45,90];
+  const milestones = [7,20,45,90];
   const today = new Date(); today.setHours(0,0,0,0);
   const milestoneRecords = adm ? milestones.map(days=>{
     const dueDate = new Date(adm.getTime() + days*86400000);
@@ -11631,7 +11631,7 @@ let _cronoEditId = null;
 function _seedProcessosBP(){
   // Migração aditiva: só adiciona processos que não existem ainda (nunca sobrescreve)
   // Se já tem dados do Firebase, respeita — só adiciona os que faltam
-  if(!localStorage.getItem('_pop_seed_additive_v6')){
+  if(!localStorage.getItem('_pop_seed_additive_v7')){
     var _seedProcessos = [
       {id:uid(),nome:'Desligamentos Voluntários',descricao:'Processo completo para desligamentos voluntários (pedido de demissão). O colaborador comunica o líder e envia e-mail ao RH informando interesse em sair e último dia de trabalho.',categoria:'Desligamento',areas:['Contábil','Fiscal','Folha'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
         {nome:'Colaborador comunica líder e envia e-mail ao RH',dia:0,descricao:'O colaborador comunica o líder sobre o desligamento e, obrigatoriamente no mesmo momento, envia e-mail para rh.planning@planning.com.br comunicando o interesse em sair da empresa e informando o último dia de trabalho.'},
@@ -11824,6 +11824,29 @@ function _seedProcessosBP(){
       msgLider:'Olá {nome},\n\nIdentificamos uma oportunidade de remanejamento para a sua equipe.\n\nUm colaborador de outra área está disponível para transferência e o perfil pode ser compatível com as necessidades do seu time.\n\nPróximos passos:\n1. Avalie se o perfil faz sentido para a sua equipe\n2. Se houver interesse, agende uma conversa com o colaborador\n3. Na conversa, alinhe expectativas da função, rotina e metas\n4. Se ambos concordarem, me informe para alinharmos a data com o DP\n5. Após confirmação, abra chamado no Acessórias para atualização de líder na Qulture.Rocks e Secullum\n\nQualquer dúvida, estou à disposição.',
       msgColab:'Olá {nome},\n\nGostaríamos de conversar com você sobre uma possibilidade de mudança de área aqui na Planning.\n\nIdentificamos uma oportunidade que pode ser interessante para o seu desenvolvimento profissional. Gostaríamos de agendar uma conversa para apresentar a proposta e entender se faz sentido para você.\n\nEssa conversa é para alinhar expectativas — nenhuma decisão será tomada sem o seu aceite.\n\nPodemos conversar?',
       msgFormal:'',
+      ativo:true},
+      {id:uid(),nome:'Acompanhamento de Novos Colaboradores',descricao:'Processo completo de acompanhamento de novos colaboradores desde a admissão até a avaliação de experiência de 90 dias. Inclui cadastro no sistema, acompanhamentos de 7, 20, 45 e 90 dias, monitoramento das AVEs na Qulture.Rocks e devolutivas.',categoria:'Onboarding',areas:['Contábil','Fiscal','Folha','BPO Financeiro','Financeiro Interno','Controladoria','TI','Desenvolvedores','Comercial','Marketing','Expansão','Consultoria'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
+        {nome:'Cadastrar novos colaboradores no sistema (terças à tarde)',dia:0,descricao:'Todas as terças-feiras à tarde, após a integração, a BP deve incluir os novos colaboradores no sistema seguindo a planilha de admissão. Os colaboradores cadastrados vão automaticamente para a aba de Acompanhamentos com os marcos de 7, 20, 45 e 90 dias.'},
+        {nome:'Acompanhamento de 7 dias — mensagem no Teams',dia:7,descricao:'Com 7 dias de empresa, enviar mensagem de apresentação no Teams para o novo colaborador. A mensagem deve: apresentar a BP, perguntar como estão os primeiros dias, verificar acesso às ferramentas, se o onboarding cobriu o essencial e se há dúvidas sobre benefícios ou processos.'},
+        {nome:'Acompanhamento de 20 dias — reunião rápida (15min)',dia:20,descricao:'Com 20 dias, agendar bate-papo rápido de 15 minutos com o colaborador. Roteiro da conversa: Em uma palavra, como foram essas primeiras semanas? O que surpreendeu (positiva ou negativamente)? Quem mais ajudou? Está à vontade pra tirar dúvidas? Sabe o que a empresa espera nos próximos 3 meses? Prioridades claras? Algo travando o dia a dia? Já teve 1:1 com o líder? O que quer aprender/desenvolver? Nota de 0 a 10 para a experiência.'},
+        {nome:'AVE 45 dias — chega na Qulture.Rocks com 35 dias',dia:35,descricao:'A avaliação de experiência de 45 dias chega na Qulture.Rocks quando o colaborador completa 35 dias. A BP deve monitorar a cada 2 dias os prazos na aba de Acompanhamentos. Na Qulture.Rocks: Reviews → Avaliação de Experiência 45 dias → Configurações → Participantes → verificar status da autoavaliação e avaliação do líder (enviada = respondida, não iniciada = pendente).'},
+        {nome:'Cobrar AVE 45 dias — acompanhar líder e colaborador',dia:45,descricao:'Monitorar status e cobrar conforme situação: ninguém respondeu → cobrar ambos; só colaborador respondeu → cobrar líder; só líder respondeu → pedir que líder fale com colaborador; ambos responderam → oferecer participar da devolutiva. Registrar situação da AVE no campo de observações do acompanhamento com resumo da avaliação. Anexar PDF da apresentação gerada pelo prompt.'},
+        {nome:'AVE 90 dias — chega na Qulture.Rocks com 80 dias',dia:80,descricao:'A avaliação de experiência de 90 dias chega na Qulture.Rocks quando o colaborador completa 80 dias. Mesmo processo de monitoramento da AVE de 45 dias: verificar a cada 2 dias na aba de Acompanhamentos e na Qulture.Rocks.'},
+        {nome:'Cobrar AVE 90 dias — acompanhar líder e colaborador',dia:90,descricao:'Mesmo fluxo de cobrança da AVE de 45 dias. Ninguém respondeu → cobrar ambos; só colaborador respondeu → cobrar líder; só líder respondeu → pedir que líder fale com colaborador; ambos responderam → oferecer participar da devolutiva. Registrar situação e anexar PDF. Esta é a avaliação final do período de experiência.'}
+      ],alertas:[
+        'Cadastro de novos colaboradores: todas as terças à tarde, após integração.',
+        'Acompanhamento de 7 dias: mensagem de apresentação da BP no Teams.',
+        'Acompanhamento de 20 dias: reunião rápida de 15 minutos (agendar com antecedência).',
+        'AVE 45 dias chega na Qulture.Rocks com 35 dias — começar a monitorar.',
+        'AVE 90 dias chega na Qulture.Rocks com 80 dias — começar a monitorar.',
+        'Monitorar prazos das AVEs a cada 2 dias na aba de Acompanhamentos.',
+        'Na Qulture.Rocks: Reviews → Avaliação de Experiência → Configurações → Participantes.',
+        'Registrar situação da AVE + resumo no campo de observações. Anexar PDF da apresentação.',
+        'Indicadores: "+xd" = ainda não deu o prazo / "-xd" = já passou do prazo.'
+      ],observacoes:'O acompanhamento é contínuo desde a admissão. Os marcos de 7 e 20 dias são conduzidos exclusivamente pela BP. Os marcos de 45 e 90 dias envolvem avaliação formal na Qulture.Rocks com autoavaliação do colaborador e avaliação do líder. A BP é responsável por monitorar e cobrar as respostas.',links:[],
+      msgLider:'Olá {nome},\n\nA avaliação de experiência (45/90 dias) do(a) {colaborador} se encerra no dia {data}.\n\nModelos de cobrança conforme situação:\n\n📌 Ninguém respondeu:\nA avaliação de vocês dois ainda está pendente. Essa etapa é importante para que o colaborador receba um feedback formal sobre os primeiros meses. Caso ache necessário, posso participar da devolutiva.\n\n📌 Só colaborador respondeu:\nEstá pendente a sua avaliação, o(a) {colaborador} já respondeu. Quando concluir, me avise.\n\n📌 Só líder respondeu:\nEstá pendente a avaliação dele(a), a sua já foi respondida. Pode falar com ele(a), por favor?\n\n📌 Ambos responderam:\nVi que vocês dois já responderam. Caso ache necessário, posso participar da devolutiva.\n\nFico à disposição! 💚',
+      msgColab:'Oii, {nome}! Tudo bem? 😊\nVocê está completando sua primeira semana na Planning e eu queria passar aqui para me apresentar e entender como estão sendo esses primeiros dias para você.\n\nEu sou a {bp}, Business Partner (BP) do seu departamento. Estou aqui para apoiar sua integração, acompanhar sua experiência e ajudar no que for preciso ao longo dessa jornada.\n\nPara eu conseguir te apoiar da melhor forma, queria te ouvir sobre alguns pontos:\n1. Como você está se sentindo nessa primeira semana?\n2. Você já conseguiu acesso a todas as ferramentas necessárias para realizar o seu trabalho?\n3. Seu onboarding cobriu as informações essenciais para você?\n4. Ficou alguma dúvida sobre benefícios ou processos internos?\n\nFico à disposição! Um abraço!',
+      msgFormal:'Oii, {nome}! Tudo bem? 😊\nGostaria de agendar um bate-papo rápido, de cerca de 15 minutinhos, para ouvir como está sendo essa fase inicial, o que tem sido positivo e se há algo que possamos melhorar.\n\nComo está sua disponibilidade para esta semana?\n\n--- ROTEIRO DA CONVERSA DE 20 DIAS ---\n\nEm uma palavra, como foram essas primeiras semanas?\n\n1. O que mais te surpreendeu — positiva ou negativamente — desde que chegou?\n2. Quem mais te ajudou nessas primeiras semanas? Como tem sido essa troca?\n3. Você se sente à vontade pra tirar dúvidas com o time, ou ainda tá naquela fase de \"não quero incomodar\"?\n4. Se eu te pedisse agora pra explicar o que a empresa espera de você nos próximos 3 meses, o que você diria?\n5. Suas prioridades estão claras, ou ainda sente que tá navegando sem mapa?\n6. Tem alguma coisa que tá travando seu dia a dia? Acesso, sistema, informação que falta?\n7. Já teve algum momento de conversa individual com seu líder? Como você se sentiu?\n8. O que você gostaria de aprender ou desenvolver nos próximos meses aqui?\n9. De 0 a 10, que nota você dá pra sua experiência até aqui? O que faria essa nota subir?',
       ativo:true}
     ];
     // Só adiciona processos cujo nome ainda não existe no DB
@@ -11838,7 +11861,7 @@ function _seedProcessosBP(){
     if(adicionou){
       persist('processosBP');
     }
-    localStorage.setItem('_pop_seed_additive_v6','1');
+    localStorage.setItem('_pop_seed_additive_v7','1');
   }
 }
 
