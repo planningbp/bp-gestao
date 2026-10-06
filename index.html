@@ -2393,7 +2393,7 @@ function computeAutoData(area, period, lider, customStart, customEnd){
   const experiencia = [];
   activeColabs.forEach(c=>{
     if(!c.admissao) return;
-    [7,15,45,90].forEach(days=>{
+    [7,20,45,90].forEach(days=>{
       const milestoneDate = new Date(c.admissao.getTime()+days*86400000);
       if(milestoneDate>=start && milestoneDate<=end){
         experiencia.push({nome:c.nome, cargo:c.cargo, admissao:c.admissao, milestone:days, milestoneDate, status:'Pendente', observacao:''});
@@ -3035,7 +3035,7 @@ function renderLiderRelatorio(ct){
   } else html += '<div style="color:#aaa;font-size:13px;">Nenhum desligamento registrado</div>';
   html += '</div>';
 
-  // ===== 3. ACOMPANHAMENTOS (7/15/45/90 dias) =====
+  // ===== 3. ACOMPANHAMENTOS (7/20/45/90 dias) =====
   html += `<div class="card" style="margin-bottom:20px;">
     <div class="section-title">Acompanhamentos — Avaliações de Experiência (${acomp.length})</div>`;
   if(acomp.length){
@@ -3895,7 +3895,7 @@ const PAGE_TITLES = {
   settings:['Configurações','Perfil e áreas do Business Partner'],
   form:['Reunião','Registro de reunião de BP'],
   detail:['Detalhe da Reunião','Resumo executivo e indicadores'],
-  acompanhamentos:['Acompanhamentos','Acompanhamento de novos colaboradores (7/15/45/90 dias)'],
+  acompanhamentos:['Acompanhamentos','Acompanhamento de novos colaboradores (7/20/45/90 dias)'],
   colaboradores:['Colaboradores','Cadastro e histórico de interações'],
   colaboradorDetail:['Colaborador','Detalhes e registros do colaborador'],
   desligamentos:['Desligamentos','Gestão de desligamentos — importar, adicionar, editar e remover'],
@@ -5795,7 +5795,7 @@ function renderMeetingForm(){
           </div>
           ${renderMiniTable('admissoesTable','Admissões no período', fd.admissoesTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'lider',label:'Líder'},{key:'departamento',label:'Departamento'},{key:'regime',label:'Regime'},{key:'admissao',label:'Data admissão'}])}
           ${renderMiniTable('desligamentosTable','Desligamentos no período', fd.desligamentosTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'lider',label:'Líder'},{key:'tipo',label:'Tipo'},{key:'motivo',label:'Motivo'},{key:'submotivo',label:'Submotivo'},{key:'dtAdmissao',label:'Admissão'},{key:'ultimoDia',label:'Último dia'},{key:'tempoDeCasa',label:'Tempo de casa'}])}
-          ${renderMiniTable('experienciaTable','Acompanhamentos (7/15/45/90 dias)', fd.experienciaTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'admissao',label:'Admissão'},{key:'milestone',label:'Marco'},{key:'milestoneDate',label:'Data'},{key:'status',label:'Status'},{key:'observacao',label:'Observações'}])}
+          ${renderMiniTable('experienciaTable','Acompanhamentos (7/20/45/90 dias)', fd.experienciaTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'admissao',label:'Admissão'},{key:'milestone',label:'Marco'},{key:'milestoneDate',label:'Data'},{key:'status',label:'Status'},{key:'observacao',label:'Observações'}])}
           ${renderMiniTable('promocoesTable','Promoções / Movimentações', fd.promocoesTable, [{key:'nome',label:'Nome'},{key:'gestor',label:'Gestor'},{key:'aprovador',label:'Aprovador'},{key:'cargoAnterior',label:'Cargo anterior'},{key:'salarioAnterior',label:'Salário anterior'},{key:'cargoNovo',label:'Cargo novo'},{key:'salarioNovo',label:'Salário novo'},{key:'reajuste',label:'Reajuste'},{key:'pct',label:'%'}])}
           ${(()=>{
             const areaColabs = DB.colaboradores.filter(c=> normalizeStr(c.area||c.departamento||'')===normalizeStr(fd.area));
@@ -6453,7 +6453,7 @@ function renderMeetingDetail(){
   </div>
   <div data-report-topic="admissoes">${detailMiniTable('Admissões no período', m.admissoesTable, ['Nome','Cargo','Líder','Departamento','Regime','Data admissão'], ['nome','cargo','lider','departamento','regime','admissao'])}</div>
   <div data-report-topic="desligamentos">${detailMiniTable('Desligamentos no período', m.desligamentosTable, ['Nome','Cargo','Líder','Tipo','Motivo','Submotivo','Admissão','Último dia','Tempo de casa'], ['nome','cargo','lider','tipo','motivo','submotivo','dtAdmissao','ultimoDia','tempoDeCasa'])}</div>
-  <div data-report-topic="acompanhamentos">${detailMiniTable('Acompanhamentos (7/15/45/90 dias)', m.experienciaTable, ['Nome','Cargo','Admissão','Marco','Data','Status','Observações'], ['nome','cargo','admissao','milestone','milestoneDate','status','observacao'])}</div>
+  <div data-report-topic="acompanhamentos">${detailMiniTable('Acompanhamentos (7/20/45/90 dias)', m.experienciaTable, ['Nome','Cargo','Admissão','Marco','Data','Status','Observações'], ['nome','cargo','admissao','milestone','milestoneDate','status','observacao'])}</div>
   <div data-report-topic="promocoes">${detailMiniTable('Promoções / Movimentações', m.promocoesTable, ['Nome','Gestor','Aprovador','Cargo anterior','Salário anterior','Cargo novo','Salário novo','Reajuste','%'], ['nome','gestor','aprovador','cargoAnterior','salarioAnterior','cargoNovo','salarioNovo','reajuste','pct'])}</div>
   <div data-report-topic="promocoes">${(()=>{
     const areaColabs = DB.colaboradores.filter(c=> normalizeStr(c.area||c.departamento||'')===normalizeStr(m.area));
@@ -6747,7 +6747,7 @@ function bindHistory(){
 }
 
 /* =========================================================
-   ACOMPANHAMENTOS (7/15/45/90 dias) — card columns
+   ACOMPANHAMENTOS (7/20/45/90 dias) — card columns
 ========================================================= */
 function getAcompanhamentoRecords(){
   const bp = currentBP();
@@ -6829,7 +6829,7 @@ function renderAcompanhamentos(){
     return true;
   });
 
-  const cols = [7,15,45,90].map(m => {
+  const cols = [7,20,45,90].map(m => {
     const items = pending.filter(r=>r.milestone===m);
     items.sort((a,b)=>a.diffDays - b.diffDays);
     return { milestone:m, items };
@@ -6843,7 +6843,7 @@ function renderAcompanhamentos(){
         <h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:10px;">
           ${ICONS.acomp} Alertas de Experiência
         </h2>
-        <p style="margin:4px 0 0;color:#888;font-size:13px;">Colaboradores dentro da janela de ±${WINDOW} dias dos marcos (7, 15, 45 e 90 dias). Selecione um mês para validar todos os registros do período.</p>
+        <p style="margin:4px 0 0;color:#888;font-size:13px;">Colaboradores dentro da janela de ±${WINDOW} dias dos marcos (7, 20, 45 e 90 dias). Selecione um mês para validar todos os registros do período.</p>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <select id="acompArea" class="select" style="min-width:150px;">
@@ -8668,7 +8668,7 @@ function renderColaboradorDetail(){
     <!-- Milestones -->
     ${milestoneRecords.length>0 ? `
     <div class="card" style="margin-bottom:20px;">
-      <div class="section-title" style="margin-bottom:14px;">Marcos de Experiência (7/15/45/90 dias)</div>
+      <div class="section-title" style="margin-bottom:14px;">Marcos de Experiência (7/20/45/90 dias)</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
         ${milestoneRecords.map(m=>{
           const dueStr = m.dueDate.toLocaleDateString('pt-BR');
@@ -9348,7 +9348,7 @@ function _exportMeetingPDFInner(meetingId){
   // === ACOMPANHAMENTOS ===
   if(m.experienciaTable && m.experienciaTable.length){
     y = checkPage(y, 20);
-    y = secTitle('Acompanhamentos — 7/15/45/90 dias ('+m.experienciaTable.length+')', y);
+    y = secTitle('Acompanhamentos — 7/20/45/90 dias ('+m.experienciaTable.length+')', y);
     doc.autoTable({
       startY: y,
       head:[['Nome','Cargo','Admissão','Marco','Data','Status','Obs.']],
@@ -9757,7 +9757,7 @@ function exportColaboradorDetailPDF(nome){
   if(adm && !isNaN(adm)){
     const today = new Date(); today.setHours(0,0,0,0);
     const acomps = DB.acompanhamentos.filter(a=> normalizeStr(a.nome)===normalizeStr(c.nome||c.Nome||''));
-    const msRows = [7,15,45,90].map(days=>{
+    const msRows = [7,20,45,90].map(days=>{
       const due = new Date(adm.getTime()+days*86400000);
       const saved = acomps.find(a=>a.milestone===days);
       const status = saved && saved.status && saved.status!=='Pendente' ? saved.status+(saved.realizado?' em '+fmtDatePDF(saved.realizado):'') : 'Pendente';
@@ -10302,7 +10302,7 @@ function renderAgendaBP(){
   const events=[];
 
   // Experiencia milestones from admissao
-  const expMilestones=[7,15,45,90];
+  const expMilestones=[7,20,45,90];
   colabs.forEach(c=>{
     const adm=parseDate(c.admissao||c.Admissão||c.dataAdmissao||'');
     if(!adm) return;
