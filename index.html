@@ -11644,10 +11644,7 @@ function _seedProcessosBP(){
         {nome:'BP marca "Ok" na planilha de controle',dia:0,descricao:'Após enviar o e-mail e excluir da Qulture, a BP marca "Ok" nas colunas correspondentes na planilha de controle de desligamentos.'}
       ],alertas:[
         'O colaborador DEVE enviar e-mail para rh.planning@planning.com.br no mesmo momento em que comunica o líder.',
-        'O e-mail de formalização deve ser enviado no último dia de trabalho do colaborador.',
-        'O líder é responsável por recolher equipamentos e devolver na TI.',
-        'Home office Goiânia: devolver equipamentos na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.',
-        'A BP deve acompanhar o líder no comunicado do desligamento à equipe.'
+        'O e-mail de formalização deve ser enviado no último dia de trabalho do colaborador.'
       ],observacoes:'',links:[],
       msgLider:'Olá {nome},\n\nInformamos que o colaborador comunicou interesse em se desligar da empresa.\n\nPróximos passos:\n1. Confirmar o último dia de trabalho\n2. Aguardar retorno do DP interno\n3. No último dia, a BP fará o envio do e-mail de formalização\n\nQualquer dúvida, estamos à disposição.',
       msgColab:'Olá {nome},\n\nRecebemos sua comunicação sobre o desligamento.\n\nPara formalizar, pedimos que envie um e-mail para rh.planning@planning.com.br informando:\n- Seu interesse em sair da empresa\n- Seu último dia de trabalho\n\nEsse envio é obrigatório para dar início aos trâmites.',
@@ -11669,10 +11666,7 @@ function _seedProcessosBP(){
         'O desligamento deve ser programado com ao menos 1 dia útil de antecedência.',
         'Verificar banco de horas e férias ANTES de abrir a solicitação.',
         'A presença da BP no comunicado ao colaborador é obrigatória.',
-        'O comunicado deve ser feito preferencialmente presencial e na parte da manhã.',
-        'O líder é responsável por recolher equipamentos e devolver na TI.',
-        'Home office Goiânia: devolver na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.',
-        'A BP deve acompanhar o líder no comunicado do desligamento à equipe.'
+        'O comunicado deve ser feito preferencialmente presencial e na parte da manhã.'
       ],observacoes:'Caso o desligamento esteja previsto para depois do dia 20, informar o DP antecipadamente até o dia 20.',links:[],
       msgLider:'Olá {nome},\n\nSobre o desligamento que conversamos:\n\nAntes de seguir, precisamos verificar:\n1. Possibilidade de remanejamento do colaborador\n2. Saldo de banco de horas (precisa zerar)\n3. Férias pendentes (precisa gozar)\n\nApós essas verificações, você deve abrir a solicitação de desligamento pelo formulário com ao menos 1 dia útil de antecedência.\n\nO comunicado ao colaborador deve ser feito presencialmente, de manhã, e eu (BP) estarei presente obrigatoriamente.',
       msgColab:'',
@@ -11689,10 +11683,7 @@ function _seedProcessosBP(){
         {nome:'BP marca "Ok" na planilha de controle',dia:0,descricao:'Após enviar o e-mail e excluir da Qulture, a BP marca "Ok" nas colunas correspondentes na planilha de controle de distratos.'}
       ],alertas:[
         'O prestador de serviço DEVE enviar e-mail para rh.planning@planning.com.br no mesmo momento em que comunica o líder.',
-        'O e-mail de formalização deve ser enviado no último dia de prestação de serviço.',
-        'O líder é responsável por recolher equipamentos e devolver na TI.',
-        'Home office Goiânia: devolver na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.',
-        'A BP deve acompanhar o líder no comunicado do distrato à equipe.'
+        'O e-mail de formalização deve ser enviado no último dia de prestação de serviço.'
       ],observacoes:'',links:[],
       msgLider:'Olá {nome},\n\nInformamos que o prestador de serviço comunicou interesse em encerrar o contrato com o tomador.\n\nPróximos passos:\n1. Confirmar o último dia de prestação de serviço\n2. Aguardar retorno do DP interno\n3. No último dia, a BP fará o envio do e-mail de formalização\n\nQualquer dúvida, estamos à disposição.',
       msgColab:'Olá {nome},\n\nRecebemos sua comunicação sobre o distrato.\n\nPara formalizar, pedimos que envie um e-mail para rh.planning@planning.com.br informando:\n- Seu interesse em encerrar o contrato\n- Seu último dia de prestação de serviço\n\nEsse envio é obrigatório para dar início aos trâmites.',
@@ -11714,10 +11705,7 @@ function _seedProcessosBP(){
         'O distrato deve ser programado com ao menos 1 dia útil de antecedência.',
         'Verificar banco de horas ANTES de abrir a solicitação.',
         'A presença da BP no comunicado ao prestador é obrigatória.',
-        'O comunicado deve ser feito preferencialmente presencial e na parte da manhã.',
-        'O líder é responsável por recolher equipamentos e devolver na TI.',
-        'Home office Goiânia: devolver na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.',
-        'A BP deve acompanhar o líder no comunicado do distrato à equipe.'
+        'O comunicado deve ser feito preferencialmente presencial e na parte da manhã.'
       ],observacoes:'Caso o distrato esteja previsto para depois do dia 20, informar o DP antecipadamente até o dia 20.',links:[],
       msgLider:'Olá {nome},\n\nSobre o distrato que conversamos:\n\nAntes de seguir, precisamos verificar:\n1. Possibilidade de remanejamento do prestador\n2. Saldo de banco de horas (precisa zerar)\n\nApós essas verificações, você deve abrir a solicitação de distrato pelo formulário com ao menos 1 dia útil de antecedência.\n\nO comunicado ao prestador deve ser feito presencialmente, de manhã, e eu (BP) estarei presente obrigatoriamente.',
       msgColab:'',
@@ -11954,16 +11942,38 @@ function _migrateDesligamentosPOP(){}
             {nome:'Líder recolhe equipamentos e devolve na TI',dia:0,descricao:'O líder é responsável por recolher todos os equipamentos do '+tipo+' e devolver à TI. Se home office em Goiânia: '+tipo+' deve deixar na unidade até o dia seguinte ao '+tipoAcao+'. Se home office em outro estado: '+tipo+' deve enviar via Correios no mesmo dia do '+tipoAcao+'.'},
             {nome:'BP acompanha comunicado do '+tipoAcao+' à equipe',dia:0,descricao:'A BP deve acompanhar o líder no comunicado do '+tipoAcao+' para toda a equipe, garantindo que a comunicação seja feita de forma adequada e respeitosa.'}
           );
-          if(!proc.alertas) proc.alertas=[];
-          proc.alertas.push('O líder é responsável por recolher equipamentos e devolver na TI.');
-          proc.alertas.push('Home office Goiânia: devolver na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.');
-          proc.alertas.push('A BP deve acompanhar o líder no comunicado do '+tipoAcao+' à equipe.');
           changed = true;
         }
       }
     });
     if(changed) persist('processosBP');
     localStorage.setItem('_mig_deslig_equip_v1','1');
+  }
+})();
+
+// Migração: remover alertas de equipamento/comunicado (devem ser apenas etapas, não alertas)
+(function(){
+  if(!localStorage.getItem('_mig_deslig_rm_alertas_v1')){
+    var nomes = ['Desligamentos Voluntários','Desligamentos Involuntários','Distrato PJ — Voluntário','Distrato PJ — Involuntário'];
+    var remover = [
+      'O líder é responsável por recolher equipamentos e devolver na TI.',
+      'Home office Goiânia: devolver equipamentos na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.',
+      'Home office Goiânia: devolver na unidade até o dia seguinte. Outro estado: enviar via Correios no mesmo dia.'
+    ];
+    var changed = false;
+    DB.processosBP.forEach(function(proc){
+      if(nomes.indexOf(proc.nome)>=0 && proc.alertas){
+        var antes = proc.alertas.length;
+        proc.alertas = proc.alertas.filter(function(a){
+          if(remover.indexOf(a)>=0) return false;
+          if(a.indexOf('acompanhar o líder no comunicado')>=0) return false;
+          return true;
+        });
+        if(proc.alertas.length !== antes) changed = true;
+      }
+    });
+    if(changed) persist('processosBP');
+    localStorage.setItem('_mig_deslig_rm_alertas_v1','1');
   }
 })();
 
