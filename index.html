@@ -8037,6 +8037,27 @@ function getMyColaboradores(){
   // PRIMARY: use bpResponsavel field if available
   const byField = _getBPColabsByField(bp);
   if(byField.length > 0){
+    // If BP also has static areas, merge bpResponsavel results with area-based colabs
+    // This ensures colabs without bpResponsavel field but in the BP's areas are included
+    if(bp.areas && bp.areas.length){
+      const allNames = new Set(byField.map(c=>normalizeStr(c.nome||c.Nome||'')));
+      const bpAreas = bp.areas.map(a=>normalizeStr(a));
+      DB.colaboradores.forEach(c=>{
+        const cArea = normalizeStr(c.area||c.departamento||'');
+        if(cArea && bpAreas.includes(cArea)){
+          allNames.add(normalizeStr(c.nome||c.Nome||''));
+        }
+      });
+      _myColabsCache = DB.colaboradores.filter(c=> allNames.has(normalizeStr(c.nome||c.Nome||'')));
+      _myColabNamesCache = allNames;
+      const expandedAreas = new Set(bpAreas);
+      _myColabsCache.forEach(c=>{
+        const a = normalizeStr(c.area||c.departamento||'');
+        if(a) expandedAreas.add(a);
+      });
+      _myExpandedAreasCache = expandedAreas;
+      return _myColabsCache;
+    }
     _myColabsCache = byField;
     const allNames = new Set(byField.map(c=>normalizeStr(c.nome||c.Nome||'')));
     _myColabNamesCache = allNames;
