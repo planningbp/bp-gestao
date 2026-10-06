@@ -11923,9 +11923,10 @@ function _migrateDesligamentosPOP(){}
   }
 })();
 
-// Migração: adicionar etapas equipamentos + comunicado equipe nos desligamentos/distratos existentes
+// Migração v2: adicionar etapas equipamentos + comunicado equipe nos desligamentos/distratos existentes
+// (v2 força re-execução caso v1 tenha rodado sobre versão incompleta do arquivo)
 (function(){
-  if(!localStorage.getItem('_mig_deslig_equip_v1')){
+  if(!localStorage.getItem('_mig_deslig_equip_v2')){
     var nomes = ['Desligamentos Voluntários','Desligamentos Involuntários','Distrato PJ — Voluntário','Distrato PJ — Involuntário'];
     var changed = false;
     nomes.forEach(function(n){
@@ -11947,7 +11948,7 @@ function _migrateDesligamentosPOP(){}
       }
     });
     if(changed) persist('processosBP');
-    localStorage.setItem('_mig_deslig_equip_v1','1');
+    localStorage.setItem('_mig_deslig_equip_v2','1');
   }
 })();
 
