@@ -994,7 +994,7 @@ let DB = {
     return saved || {_perBp:true, templateId:'', publicKey:''};
   })()
 };
-const FB_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias'];
+const FB_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
 var _fbReceiving = false;
 function persist(part){
   saveJSON(LS[part], DB[part]);
@@ -1090,14 +1090,8 @@ try {
           if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
           if(typeof clearMyColabsCache==='function') clearMyColabsCache();
         }
-        // Re-render current page if relevant — for BP sessions, always re-render on colaboradores update
-        if(isLiderSession()){
-          // Líder portal: re-render on any data change so heads see updates in real-time
-          fbDebouncedRender();
-        } else if(key==='colaboradores' || UI.page===key || UI.page==='dashboard' || UI.page==='lideres'){
-          var c = document.getElementById('content');
-          if(c && typeof render === 'function') fbDebouncedRender();
-        }
+        // Re-render current page on ANY data change from Firebase — keeps all BPs in sync
+        if(typeof render === 'function') fbDebouncedRender();
         if(key==='solicitacoes'){
           if(UI.page==='solicitacoes'){
             var c2 = document.getElementById('content');
