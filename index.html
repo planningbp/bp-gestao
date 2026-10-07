@@ -1885,8 +1885,27 @@ function computeCrudFields(pageKey, data){
 function renderCrudPage(pageKey){
   const cfg = CRUD_PAGES[pageKey];
   if(!cfg) return '<div class="card">Página não encontrada.</div>';
-  const data = DB[cfg.dbKey] || [];
-  computeCrudFields(pageKey, data);
+  const _rawData = DB[cfg.dbKey] || [];
+  computeCrudFields(pageKey, _rawData);
+  // Filter by current BP FIRST — each BP only sees their own data
+  const _crudBp = currentBP();
+  let data = _rawData;
+  if(SESSION && SESSION.bpId && _crudBp){
+    const _bpIdNum = Number(_crudBp.id);
+    const _crudColabNames = getMyColabNames();
+    const _crudAreas = getMyExpandedAreas();
+    data = _rawData.filter(function(r){
+      if(r.bpId != null) return Number(r.bpId) === _bpIdNum;
+      if(r.bpResponsavel && normalizeStr(r.bpResponsavel) === normalizeStr(_crudBp.name)) return true;
+      var rNome = normalizeStr(r.nome||r.Nome||'');
+      if(rNome && _crudColabNames && _crudColabNames.has(rNome)) return true;
+      var rLider = normalizeStr(r.lider||r.gestor||r.coordenacao||'');
+      if(rLider && _crudColabNames && _crudColabNames.has(rLider)) return true;
+      var rArea = normalizeStr(r.area||r.departamento||r.departamentoRaw||'');
+      if(rArea && _crudAreas && _crudAreas.has(rArea)) return true;
+      return false;
+    });
+  }
   const searchKey = 'crudSearch_'+pageKey;
   const fSearch = (UI[searchKey]||'').toLowerCase();
   if(!UI.crudFilters) UI.crudFilters = {};
@@ -1894,27 +1913,6 @@ function renderCrudPage(pageKey){
   const colFilters = UI.crudFilters[pageKey];
 
   let filtered = data;
-  // Filter by current BP — each BP only sees their own data
-  const _crudBp = currentBP();
-  if(SESSION && SESSION.bpId && _crudBp){
-    const _bpIdNum = Number(_crudBp.id);
-    // For non-colaboradores CRUD pages: filter by bpId (each BP only sees what they entered)
-    // Records without bpId (legacy) fall back to líder/name matching
-    filtered = filtered.filter(r=>{
-      // If record has bpId, match it (Number conversion for safety)
-      if(r.bpId != null) return Number(r.bpId) === _bpIdNum;
-      // Legacy records without bpId: match by líder → BP team
-      if(r.bpResponsavel && _matchBPResponsavel(r.bpResponsavel, _bp)) return true;
-      const _crudColabNames = getMyColabNames();
-      if(_crudColabNames){
-        const rLider = normalizeStr(r.lider||r.gestor||r.coordenacao||'');
-        const rNome = normalizeStr(r.nome||r.Nome||'');
-        if(rLider && _crudColabNames.has(rLider)) return true;
-        if(rNome && _crudColabNames.has(rNome)) return true;
-      }
-      return false; // no match, hide
-    });
-  }
   // Promoções: only show records with actual salary increase
   if(pageKey==='promocoes') filtered = filtered.filter(r=> isPromoSalarial(r));
   if(fSearch) filtered = filtered.filter(r=> cfg.cols.some(c=> ((r[c.key]||'').toString().toLowerCase()).includes(fSearch)));
@@ -2230,11 +2228,31 @@ function bindCrudPage(pageKey){
   });
 
   // Delete
+  // Recompute BP-filtered data for edit/delete lookups
+  function _crudBPFiltered(){
+    var raw = DB[cfg.dbKey]||[];
+    var bp = currentBP();
+    if(!SESSION||!SESSION.bpId||!bp) return raw;
+    var bpId = Number(bp.id);
+    var names = getMyColabNames();
+    var areas = getMyExpandedAreas();
+    return raw.filter(function(r){
+      if(r.bpId!=null) return Number(r.bpId)===bpId;
+      if(r.bpResponsavel && normalizeStr(r.bpResponsavel)===normalizeStr(bp.name)) return true;
+      var n=normalizeStr(r.nome||r.Nome||'');
+      if(n&&names&&names.has(n)) return true;
+      var l=normalizeStr(r.lider||r.gestor||r.coordenacao||'');
+      if(l&&names&&names.has(l)) return true;
+      var a=normalizeStr(r.area||r.departamento||r.departamentoRaw||'');
+      if(a&&areas&&areas.has(a)) return true;
+      return false;
+    });
+  }
   document.querySelectorAll('.crudDelBtn[data-crud-page="'+pageKey+'"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const idx = Number(btn.getAttribute('data-crud-idx'));
       const fSearch = (UI[searchKey]||'').toLowerCase();
-      let filtered = DB[cfg.dbKey];
+      let filtered = _crudBPFiltered();
       if(fSearch) filtered = filtered.filter(r=> cfg.cols.some(c=> ((r[c.key]||'').toString().toLowerCase()).includes(fSearch)));
       const rec = filtered[idx];
       if(!rec) return;
@@ -2251,7 +2269,7 @@ function bindCrudPage(pageKey){
     btn.addEventListener('click', ()=>{
       const idx = Number(btn.getAttribute('data-crud-idx'));
       const fSearch = (UI[searchKey]||'').toLowerCase();
-      let filtered = DB[cfg.dbKey];
+      let filtered = _crudBPFiltered();
       if(fSearch) filtered = filtered.filter(r=> cfg.cols.some(c=> ((r[c.key]||'').toString().toLowerCase()).includes(fSearch)));
       const rec = filtered[idx];
       if(!rec) return;
