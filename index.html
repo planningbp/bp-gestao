@@ -1015,12 +1015,21 @@ function _ghMergeArrays(localArr, remoteArr, keyFn){
   });
   return merged;
 }
+function _ghStableDateStr(v){
+  if(!v) return '';
+  if(v instanceof Date) return v.toISOString().slice(0,10);
+  var s = String(v).trim();
+  // Try to parse and normalize to YYYY-MM-DD
+  var d = new Date(s);
+  if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+  return normalizeStr(s);
+}
 function _ghRecordKey(key, r){
   // For colaboradores and bancoHorasImport, ALWAYS use nome as key (ids differ between imports)
   if(key==='colaboradores'||key==='bancoHorasImport') return normalizeStr(r.nome||r.Nome||'');
-  // For desligamentos and promocoes, use nome+date composite key
-  if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.ultimoDia||r.mesRaw||'');
-  if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.mesRaw||r.mesDate||'');
+  // For desligamentos and promocoes, use nome+date composite key (stable date format)
+  if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.ultimoDia||r.mesRaw);
+  if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.mesRaw||r.mesDate);
   // For other keys, use id if available
   if(r.id) return String(r.id);
   return null;
@@ -1261,6 +1270,17 @@ async function ghInitialLoad(){
       var remoteLen = data.length;
       DB[key] = _ghMergeArrays(data, DB[key], kf);
       if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
+      // Post-merge dedup: remove duplicates caused by Date vs string key mismatch
+      var dedupSeen = new Set();
+      var beforeDedup = DB[key].length;
+      DB[key] = DB[key].filter(function(r){
+        var dk = _ghRecordKey(key, r);
+        if(!dk) return true;
+        if(dedupSeen.has(dk)) return false;
+        dedupSeen.add(dk);
+        return true;
+      });
+      if(DB[key].length < beforeDedup) console.log('[GH] Dedup '+key+': '+beforeDedup+' -> '+DB[key].length);
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       // If merged result is larger than remote, push local-only records to GitHub
