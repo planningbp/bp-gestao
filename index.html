@@ -803,7 +803,8 @@ const LS = {
   notificacoes:'planning_notificacoes',
   emailjsConfig:'planning_emailjs_config',
   processosBP:'planning_processos_bp',
-  processosInstancias:'planning_processos_instancias'
+  processosInstancias:'planning_processos_instancias',
+  vagas:'planning_vagas'
 };
 function loadJSON(key, fallback){
   try{ const v = localStorage.getItem(key); return v?JSON.parse(v):fallback; }catch(e){ return fallback; }
@@ -982,6 +983,7 @@ let DB = {
   notificacoes: loadJSON(LS.notificacoes, []),
   processosBP: loadJSON(LS.processosBP, []),
   processosInstancias: loadJSON(LS.processosInstancias, []),
+  vagas: loadJSON(LS.vagas, []),
   emailjsConfig: (function(){
     var saved = loadJSON(LS.emailjsConfig, null);
     // Migrate old single-config to per-BP format
@@ -993,12 +995,12 @@ let DB = {
     return saved || {_perBp:true, templateId:'', publicKey:''};
   })()
 };
-const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
+const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1','vagas'];
 var _ghReceiving = false;
 
 // === STARTUP DEDUP: clean localStorage duplicates immediately ===
 (function _startupDedup(){
-  var keys = ['colaboradores','desligamentos','promocoes','bancoHorasImport'];
+  var keys = ['colaboradores','desligamentos','promocoes','bancoHorasImport','vagas'];
   keys.forEach(function(key){
     var arr = DB[key];
     if(!Array.isArray(arr) || arr.length < 2) return;
@@ -1018,6 +1020,8 @@ var _ghReceiving = false;
         if(dt2 instanceof Date) dt2 = dt2.toISOString().slice(0,10);
         else if(dt2){ try{ var dd2=new Date(String(dt2)); if(!isNaN(dd2.getTime())) dt2=dd2.toISOString().slice(0,10); }catch(e){} }
         k = normalizeStr(r.nome||'')+'|'+(dt2||'');
+      } else if(key==='vagas'){
+        k = r.idVaga || '';
       }
       if(!k) return true;
       if(seen.has(k)) return false;
@@ -1065,6 +1069,7 @@ function _ghRecordKey(key, r){
   // For desligamentos and promocoes, use nome+date composite key (stable date format)
   if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.ultimoDia||r.mesRaw);
   if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.mesRaw||r.mesDate);
+  if(key==='vagas') return r.idVaga || null;
   // For other keys, use id if available
   if(r.id) return String(r.id);
   return null;
@@ -1097,7 +1102,8 @@ const GH_SYNC = {
 const GH_DATE_FIELDS = {
   colaboradores: ['nascimento','admissao','efetivacao','pejotizacao'],
   desligamentos: ['mesDate','dtAdmissao','ultimoDia'],
-  promocoes: ['mesDate']
+  promocoes: ['mesDate'],
+  vagas: ['dtAbertura','slaEncerramento','dtEncerramento','dtCancelamento']
 };
 
 function _ghStripBinary(part, payload){
@@ -1500,7 +1506,8 @@ const ICONS = {
   forms:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></svg>',
   enps:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/><circle cx="18" cy="7" r="2"/><circle cx="6" cy="11" r="2"/></svg>',
   cronograma:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M7 14l2 2 4-4"/><path d="M7 18h4"/></svg>',
-  link:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>'
+  link:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
+  vagas:'<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><path d="M12 12v4"/><path d="M2 12h20"/></svg>'
 };
 
 /* =========================================================
@@ -4176,6 +4183,7 @@ const NAV_ITEMS = [
   {key:'meetings', label:'Reuniões', icon:'meetings'},
   {key:'colaboradores', label:'Colaboradores', icon:'users'},
   {key:'desligamentos', label:'Desligamentos', icon:'desl'},
+  {key:'vagas', label:'Vagas', icon:'vagas'},
   {key:'promocoes', label:'Promoções', icon:'promo'},
   {key:'pdis', label:'PDIs', icon:'pdi'},
   {key:'bancoHorasImport', label:'Banco de Horas', icon:'banco'},
@@ -4217,10 +4225,11 @@ const PAGE_TITLES = {
   agenda:['Agenda BP','Timeline consolidada — prazos, aniversários, ações e alertas'],
   solicitacoes:['Solicitações','Solicitações de movimentação dos líderes'],
   enps:['eNPS / lNPS','Cadastro e evolução de eNPS e lNPS por líder, departamento e empresa'],
-  cronograma:['Cronograma BP — POP','Procedimento Operacional Padrão — processos, prazos e etapas compartilhados entre todas as BPs']
+  cronograma:['Cronograma BP — POP','Procedimento Operacional Padrão — processos, prazos e etapas compartilhados entre todas as BPs'],
+  vagas:['Vagas','Mapa de vagas — abertura, encerramento, SLA e indicadores do processo seletivo']
 };
 function hasImportedData(){
-  return DB.colaboradores.length>0 || DB.desligamentos.length>0 || DB.promocoes.length>0;
+  return DB.colaboradores.length>0 || DB.desligamentos.length>0 || DB.promocoes.length>0 || (DB.vagas||[]).length>0;
 }
 function renderShell(){
   const bp = currentBP();
@@ -4290,6 +4299,7 @@ function renderPageContent(){
   else if(UI.page==='enps'){ c.innerHTML = renderEnpsPage(); bindEnpsPage(); }
   else if(UI.page==='cronograma'){ c.innerHTML = renderCronogramaPage(); bindCronogramaPage(); }
   else if(UI.page==='pdis'){ c.innerHTML = renderPDIsPage(); bindPDIsPage(); }
+  else if(UI.page==='vagas'){ c.innerHTML = renderVagasPage(); bindVagasPage(); }
   else if(CRUD_PAGES[UI.page]){ c.innerHTML = renderCrudPage(UI.page); bindCrudPage(UI.page); }
 }
 
@@ -5485,17 +5495,18 @@ function renderImportZone(type, title, desc, acceptPDF){
   </div>`;
 }
 function renderImport(){
-  const _myC = getMyColaboradores(), _myD = _filterByMyBP(DB.desligamentos), _myP = _filterByMyBP(DB.promocoes), _myPd = _filterByMyBP(DB.pdis), _myBH = _filterByMyBP(DB.bancoHorasImport);
-  const hasAny = _myC.length || _myD.length || _myP.length || _myPd.length || _myBH.length;
+  const _myC = getMyColaboradores(), _myD = _filterByMyBP(DB.desligamentos), _myP = _filterByMyBP(DB.promocoes), _myPd = _filterByMyBP(DB.pdis), _myBH = _filterByMyBP(DB.bancoHorasImport), _myV = DB.vagas||[];
+  const hasAny = _myC.length || _myD.length || _myP.length || _myPd.length || _myBH.length || _myV.length;
   return `
   <div class="grid grid-3" style="margin-bottom:20px;">
     ${renderImportZone('colaboradores','Colaboradores','Base completa de colaboradores ativos e histórico.')}
     ${renderImportZone('desligamentos','Desligamentos','Registros de desligamento por competência.')}
     ${renderImportZone('promocoes','Promoções','Movimentações salariais e de cargo.')}
   </div>
-  <div class="grid grid-2" style="margin-bottom:20px;">
+  <div class="grid grid-3" style="margin-bottom:20px;">
     ${renderImportZone('pdis','PDIs','Planos de Desenvolvimento Individual — importar planilha de PDIs.')}
     ${renderImportZone('bancoHorasImport','Banco de Horas','Importar planilha ou PDF com nome do colaborador e saldo de horas. Colunas: Nome, Horas, Observação (opcional).', true)}
+    ${renderImportZone('vagas','Mapa de Vagas','Importar planilha com mapa de vagas — abertura, encerramento, SLA.')}
   </div>
   ${hasAny?'<div style="margin-bottom:20px;"><button class="btn btn-outline btn-sm" id="btnClearAllImport" style="width:auto;padding:6px 16px;color:var(--red);border-color:var(--red);">'+ICONS.trash+' Limpar todas as bases</button></div>':''}
   <div id="importPreview"></div>`;
@@ -5751,7 +5762,7 @@ function openAddModal(db){
 }
 function bindImport(){
   renderImportPreviewTables();
-  ['colaboradores','desligamentos','promocoes','pdis','bancoHorasImport'].forEach(type=>{
+  ['colaboradores','desligamentos','promocoes','pdis','bancoHorasImport','vagas'].forEach(type=>{
     const zone = document.getElementById('zone_'+type);
     const input = document.getElementById('file_'+type);
     input.addEventListener('change', function(){ if(this.files[0]) handleImportFile(type, this.files[0]); });
@@ -5765,8 +5776,8 @@ function bindImport(){
   const btnClear = document.getElementById('btnClearAllImport');
   if(btnClear) btnClear.addEventListener('click', ()=>{
     if(!confirm('Tem certeza que deseja limpar TODAS as bases importadas (colaboradores, desligamentos e promoções)?')) return;
-    DB.colaboradores=[]; DB.desligamentos=[]; DB.promocoes=[]; DB.acompanhamentos=[]; DB.oneOnOnes=[]; DB.scores=[]; DB.pdis=[]; DB.bancoHorasImport=[]; DB.relatorios1on1=[];
-    persist('colaboradores'); persist('desligamentos'); persist('promocoes'); persist('acompanhamentos'); persist('oneOnOnes'); persist('scores'); persist('pdis'); persist('bancoHorasImport'); persist('relatorios1on1');
+    DB.colaboradores=[]; DB.desligamentos=[]; DB.promocoes=[]; DB.acompanhamentos=[]; DB.oneOnOnes=[]; DB.scores=[]; DB.pdis=[]; DB.bancoHorasImport=[]; DB.relatorios1on1=[]; DB.vagas=[];
+    persist('colaboradores'); persist('desligamentos'); persist('promocoes'); persist('acompanhamentos'); persist('oneOnOnes'); persist('scores'); persist('pdis'); persist('bancoHorasImport'); persist('relatorios1on1'); persist('vagas');
     renderShellAndPage();
   });
 }
@@ -5777,6 +5788,7 @@ function _finishImportMerge(type, parsed, statusEl){
     if(type==='promocoes') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
     if(type==='pdis') return normalizeStr(r.nome);
     if(type==='bancoHorasImport') return normalizeStr(r.nome);
+    if(type==='vagas') return r.idVaga||'';
     return r.id;
   }
   const existingKeys = new Set(existing.map(dedupKey));
@@ -5850,6 +5862,7 @@ function handleImportFile(type, file){
     else if(type==='desligamentos') parsed = parseDesligamentos(rows);
     else if(type==='pdis') parsed = parsePDIs(rows);
     else if(type==='bancoHorasImport') parsed = parseBancoHorasImport(rows);
+    else if(type==='vagas') parsed = parseVagas(rows);
     else parsed = parsePromocoes(rows);
     // Colaboradores: full replace (planilha é a base de verdade)
     // Outros: merge (append new, update existing)
@@ -5880,6 +5893,79 @@ function handleImportFile(type, file){
       _finishImportMerge(type, parsed, statusEl);
     }
   });
+}
+
+function parseVagas(rows){
+  var out = [];
+  if(!rows || rows.length < 2) return out;
+  var bp = currentBP();
+  var bpName = bp ? bp.name : '';
+  for(var i = 1; i < rows.length; i++){
+    var r = rows[i];
+    if(!r) continue;
+    function cellStr(idx){
+      var v = r[idx];
+      if(v == null) return '';
+      var s = String(v).trim();
+      // Replace non-breaking spaces
+      s = s.replace(/ /g, '').trim();
+      return s;
+    }
+    function cellDate(idx){
+      var v = r[idx];
+      if(v == null || v === '') return null;
+      if(v instanceof Date) return isNaN(v.getTime()) ? null : v;
+      var s = String(v).trim();
+      if(!s || s === ' ') return null;
+      // Try YYYY-MM-DD HH:MM:SS
+      var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(m){ var d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])); return isNaN(d.getTime())?null:d; }
+      // Try dd/mm/yyyy
+      var m2 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if(m2){ var yr = m2[3].length===2 ? 2000+parseInt(m2[3]) : parseInt(m2[3]); var d2 = new Date(yr, parseInt(m2[2])-1, parseInt(m2[1])); return isNaN(d2.getTime())?null:d2; }
+      // Excel serial
+      if(typeof v === 'number' && v > 25569 && v < 100000){
+        var utcDays = Math.floor(v - 25569);
+        var d3 = new Date(utcDays * 86400 * 1000);
+        return isNaN(d3.getTime())?null:d3;
+      }
+      var d4 = new Date(s);
+      return isNaN(d4.getTime()) ? null : d4;
+    }
+    var idVaga = cellStr(3);
+    if(!idVaga) idVaga = 'VAGA_ROW_' + i;
+    var tempoRaw = r[20];
+    var tempoFechamento = null;
+    if(tempoRaw != null && tempoRaw !== ''){
+      var tf = parseFloat(tempoRaw);
+      if(!isNaN(tf)) tempoFechamento = Math.round(tf);
+    }
+    out.push({
+      idVaga: idVaga,
+      mes: parseInt(cellStr(0)) || null,
+      departamentoCategoria: cellStr(1),
+      idCargo: cellStr(2),
+      departamento: cellStr(4),
+      vaga: cellStr(5),
+      responsavelAbertura: cellStr(6),
+      liderImediato: cellStr(7),
+      coordenador: cellStr(8),
+      processoSeletivo: cellStr(9).toUpperCase(),
+      dtCancelamento: cellDate(10),
+      tipo: cellStr(11),
+      nomeSubstituicao: cellStr(12),
+      colaboradorAtivo: cellStr(13).toUpperCase(),
+      projetoCliente: cellStr(14),
+      dtAbertura: cellDate(15),
+      slaEncerramento: cellDate(16),
+      dtEncerramento: cellDate(17),
+      statusPrazo: cellStr(18),
+      candidatoAprovado: cellStr(19),
+      tempoFechamento: tempoFechamento,
+      bpResponsavel: bpName
+    });
+  }
+  return out;
 }
 
 /* =========================================================
@@ -8196,6 +8282,26 @@ function renderLideresPage(){
         html += '<div style="height:180px;margin-bottom:16px;"><canvas id="'+canvasId+'" data-lider-name="'+esc(liderNome)+'" style="width:100%;height:100%;"></canvas></div>';
       }
 
+      // Vagas abertas do líder
+      var liderVagas = (DB.vagas||[]).filter(function(v){
+        return normalizeStr(v.liderImediato||'')===normalizeStr(liderNome)
+          && (v.processoSeletivo||'').toUpperCase()!=='CANCELADO'
+          && !v.dtEncerramento;
+      });
+      if(liderVagas.length){
+        html += '<div style="font-weight:700;font-size:13px;margin-bottom:8px;">Vagas Abertas ('+liderVagas.length+')</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:16px;">';
+        liderVagas.forEach(function(v){
+          var diasAberto = v.dtAbertura ? Math.floor((new Date()-new Date(v.dtAbertura))/(86400000)) : 0;
+          var corBorda = diasAberto > 30 ? '#FA6914' : '#0AE18C';
+          html += '<div style="background:#fffbeb;border-radius:8px;padding:10px 14px;border-left:3px solid '+corBorda+';">'
+            + '<div style="font-weight:600;font-size:12px;">'+esc(v.vaga||v.idVaga||'')+'</div>'
+            + '<div style="font-size:11px;color:#888;">'+esc(v.departamento||'')+' · '+diasAberto+' dias aberta</div>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+
       // Relatórios 1:1
       const liderReports = DB.relatorios1on1.filter(r=>normalizeStr(r.lider)===normalizeStr(liderNome));
       liderReports.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
@@ -8405,6 +8511,231 @@ function bindLideresPage(){
         scales:{y:{min:_yMin,max:_yMax,ticks:{stepSize:20,font:{size:11}},grid:{color:'#e5e5e5'}},x:{grid:{display:false},ticks:{font:{size:11}}}}}
     });
   });
+}
+
+/* =========================================================
+   VAGAS PAGE
+========================================================= */
+function renderVagasPage(){
+  var allVagas = DB.vagas || [];
+  var bp = currentBP();
+
+  // Filters state
+  var fDe = UI.vagasDe || '';
+  var fAte = UI.vagasAte || '';
+  var fDepto = UI.vagasDepto || '';
+  var fLider = UI.vagasLider || '';
+  var fStatus = UI.vagasStatus || '';
+
+  // Collect unique departamentos and lideres for dropdowns
+  var deptoSet = new Set();
+  var liderSet = new Set();
+  allVagas.forEach(function(v){
+    if(v.departamento) deptoSet.add(v.departamento);
+    if(v.liderImediato) liderSet.add(v.liderImediato);
+  });
+  var deptos = Array.from(deptoSet).sort();
+  var lideres = Array.from(liderSet).sort();
+
+  // Filter vagas
+  var filtered = allVagas.filter(function(v){
+    if(fDepto && v.departamento !== fDepto) return false;
+    if(fLider && v.liderImediato !== fLider) return false;
+    if(fStatus === 'abertas' && (v.dtEncerramento || (v.processoSeletivo||'').toUpperCase() === 'CANCELADO')) return false;
+    if(fStatus === 'encerradas' && !v.dtEncerramento) return false;
+    if(fStatus === 'canceladas' && (v.processoSeletivo||'').toUpperCase() !== 'CANCELADO') return false;
+    if(fDe){
+      var de = new Date(fDe + 'T00:00:00');
+      if(v.dtAbertura && new Date(v.dtAbertura) < de) return false;
+    }
+    if(fAte){
+      var ate = new Date(fAte + 'T23:59:59');
+      if(v.dtAbertura && new Date(v.dtAbertura) > ate) return false;
+    }
+    return true;
+  });
+
+  // KPI calculations
+  var abertas = allVagas.filter(function(v){
+    return (v.processoSeletivo||'').toUpperCase() !== 'CANCELADO' && !v.dtEncerramento;
+  });
+
+  var encerradas = filtered.filter(function(v){ return !!v.dtEncerramento; });
+
+  var tempoTotal = 0, tempoCount = 0;
+  encerradas.forEach(function(v){
+    if(v.tempoFechamento != null && !isNaN(v.tempoFechamento)){
+      tempoTotal += v.tempoFechamento;
+      tempoCount++;
+    }
+  });
+  var tempoMedio = tempoCount > 0 ? Math.round(tempoTotal / tempoCount) : 0;
+
+  var dentroPrazo = encerradas.filter(function(v){
+    return (v.statusPrazo||'').toUpperCase().indexOf('DENTRO') >= 0;
+  }).length;
+  var pctPrazo = encerradas.length > 0 ? (dentroPrazo / encerradas.length * 100) : 0;
+
+  // Build HTML
+  var html = '';
+
+  // Header with import button
+  html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:16px;">'
+    + '<div>'
+    + '<h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:10px;">' + ICONS.vagas + ' Mapa de Vagas</h2>'
+    + '<p style="margin:4px 0 0;color:#888;font-size:13px;">Acompanhe vagas abertas, encerradas, SLA e indicadores do processo seletivo.</p>'
+    + '</div>'
+    + '<label class="btn btn-primary" style="width:auto;cursor:pointer;">' + ICONS.import + ' Importar Mapa de Vagas'
+    + '<input type="file" id="vagasImportFile" accept=".xlsx,.xls" style="display:none;">'
+    + '</label>'
+    + '</div>';
+
+  // KPI cards
+  html += '<div class="grid grid-4" style="margin-bottom:20px;">'
+    + '<div class="card kpi-card"><div class="kpi-top"><div class="kpi-icon">' + ICONS.vagas + '</div></div><div class="kpi-value">' + abertas.length + '</div><div class="kpi-label">Vagas Abertas</div></div>'
+    + '<div class="card kpi-card"><div class="kpi-top"><div class="kpi-icon" style="background:#E0FBF0;color:#08B870;">' + ICONS.check + '</div></div><div class="kpi-value">' + encerradas.length + '</div><div class="kpi-label">Encerradas no Período</div></div>'
+    + '<div class="card kpi-card"><div class="kpi-top"><div class="kpi-icon" style="background:#f0f9ff;color:#14C8FA;">' + ICONS.clock + '</div></div><div class="kpi-value">' + tempoMedio + '</div><div class="kpi-label">Tempo Médio (dias)</div></div>'
+    + '<div class="card kpi-card"><div class="kpi-top"><div class="kpi-icon" style="background:' + (pctPrazo >= 80 ? '#E0FBF0' : '#FFF3EB') + ';color:' + (pctPrazo >= 80 ? '#08B870' : '#FA6914') + ';">' + ICONS.chart + '</div></div><div class="kpi-value">' + pctPrazo.toFixed(1).replace('.', ',') + '%</div><div class="kpi-label">Dentro do Prazo</div></div>'
+    + '</div>';
+
+  // Filters
+  html += '<div class="card" style="margin-bottom:20px;padding:16px;">'
+    + '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">'
+    + '<div class="field" style="margin:0;min-width:130px;"><label>De</label><input type="date" id="vagasFilterDe" value="' + esc(fDe) + '" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;width:100%;"></div>'
+    + '<div class="field" style="margin:0;min-width:130px;"><label>Até</label><input type="date" id="vagasFilterAte" value="' + esc(fAte) + '" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;width:100%;"></div>'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Departamento</label><select id="vagasFilterDepto" class="select" style="width:100%;"><option value="">Todos</option>' + deptos.map(function(d){ return '<option value="' + esc(d) + '"' + (d === fDepto ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Líder</label><select id="vagasFilterLider" class="select" style="width:100%;"><option value="">Todos</option>' + lideres.map(function(l){ return '<option value="' + esc(l) + '"' + (l === fLider ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:140px;"><label>Status</label><select id="vagasFilterStatus" class="select" style="width:100%;"><option value="">Todas</option><option value="abertas"' + (fStatus === 'abertas' ? ' selected' : '') + '>Abertas</option><option value="encerradas"' + (fStatus === 'encerradas' ? ' selected' : '') + '>Encerradas</option><option value="canceladas"' + (fStatus === 'canceladas' ? ' selected' : '') + '>Canceladas</option></select></div>'
+    + '</div></div>';
+
+  // Table
+  html += '<div class="card" style="padding:0;overflow:hidden;">'
+    + '<div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;">'
+    + '<div class="section-title" style="margin:0;">Vagas (' + filtered.length + ')</div>'
+    + '</div>'
+    + '<div class="table-wrap" style="overflow-x:auto;">'
+    + '<table style="min-width:1400px;"><thead><tr>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">ID</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Vaga</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Departamento</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Líder Imediato</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Tipo</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Dt Abertura</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">SLA</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Dt Encerramento</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Status</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Candidato Aprovado</th>'
+    + '<th style="font-size:10px;text-transform:uppercase;color:#888;padding:10px;">Tempo (dias)</th>'
+    + '</tr></thead><tbody>';
+
+  if(!filtered.length){
+    html += '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:30px;">Nenhuma vaga encontrada. Importe o mapa de vagas para começar.</td></tr>';
+  } else {
+    filtered.forEach(function(v, idx){
+      var statusUpper = (v.processoSeletivo || '').toUpperCase();
+      var prazoUpper = (v.statusPrazo || '').toUpperCase();
+      var rowBg = '';
+      var statusBadge = '';
+
+      if(statusUpper === 'CANCELADO'){
+        rowBg = 'background:#f9fafb;';
+        statusBadge = '<span style="background:#e5e7eb;color:#666;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Cancelada</span>';
+      } else if(v.dtEncerramento){
+        if(prazoUpper.indexOf('DENTRO') >= 0){
+          rowBg = 'background:#f0fdf4;';
+          statusBadge = '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">No Prazo</span>';
+        } else {
+          rowBg = 'background:#fef2f2;';
+          statusBadge = '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Fora do Prazo</span>';
+        }
+      } else {
+        // Open - check if approaching SLA
+        var hoje = new Date();
+        var sla = v.slaEncerramento ? new Date(v.slaEncerramento) : null;
+        if(sla && sla < hoje){
+          rowBg = 'background:#fef2f2;';
+          statusBadge = '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">SLA Vencido</span>';
+        } else if(sla){
+          var diasRestantes = Math.floor((sla - hoje) / 86400000);
+          if(diasRestantes <= 7){
+            rowBg = 'background:#fffbeb;';
+            statusBadge = '<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Atenção (' + diasRestantes + 'd)</span>';
+          } else {
+            statusBadge = '<span style="background:#dbeafe;color:#2563eb;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Aberta</span>';
+          }
+        } else {
+          statusBadge = '<span style="background:#dbeafe;color:#2563eb;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Aberta</span>';
+        }
+      }
+
+      html += '<tr style="border-bottom:1px solid #f0f0f0;' + rowBg + '">'
+        + '<td style="padding:10px;font-size:12px;font-weight:600;color:#555;">' + esc(v.idVaga || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;font-weight:600;">' + esc(v.vaga || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + esc(v.departamento || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + esc(v.liderImediato || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + esc(v.tipo || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + fmtDate(v.dtAbertura) + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + fmtDate(v.slaEncerramento) + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + fmtDate(v.dtEncerramento) + '</td>'
+        + '<td style="padding:10px;">' + statusBadge + '</td>'
+        + '<td style="padding:10px;font-size:12px;">' + esc(v.candidatoAprovado || '') + '</td>'
+        + '<td style="padding:10px;font-size:12px;font-weight:600;">' + (v.tempoFechamento != null ? v.tempoFechamento : '-') + '</td>'
+        + '</tr>';
+    });
+  }
+
+  html += '</tbody></table></div></div>';
+
+  return html;
+}
+
+function bindVagasPage(){
+  var rerender = function(){ var c=document.getElementById('content'); c.innerHTML=renderVagasPage(); bindVagasPage(); };
+
+  // Import file
+  var importInput = document.getElementById('vagasImportFile');
+  if(importInput){
+    importInput.addEventListener('change', function(){
+      if(!this.files[0]) return;
+      var file = this.files[0];
+      readWorkbookFile(file, function(err, rows){
+        if(err){ alert('Erro ao ler o arquivo.'); return; }
+        var parsed = parseVagas(rows);
+        if(!parsed.length){ alert('Nenhum registro encontrado na planilha.'); return; }
+        // Merge using idVaga as key
+        var existing = DB.vagas || [];
+        var existingKeys = {};
+        existing.forEach(function(v, i){ if(v.idVaga) existingKeys[v.idVaga] = i; });
+        var added = 0, updated = 0;
+        parsed.forEach(function(p){
+          if(p.idVaga && existingKeys[p.idVaga] != null){
+            existing[existingKeys[p.idVaga]] = p;
+            updated++;
+          } else {
+            existing.push(p);
+            added++;
+          }
+        });
+        DB.vagas = existing;
+        persist('vagas');
+        alert((added ? added + ' novas vagas' : '') + (added && updated ? ', ' : '') + (updated ? updated + ' atualizadas' : '') + ' — total: ' + existing.length);
+        rerender();
+      });
+    });
+  }
+
+  // Filters
+  var filterDe = document.getElementById('vagasFilterDe');
+  var filterAte = document.getElementById('vagasFilterAte');
+  var filterDepto = document.getElementById('vagasFilterDepto');
+  var filterLider = document.getElementById('vagasFilterLider');
+  var filterStatus = document.getElementById('vagasFilterStatus');
+
+  if(filterDe) filterDe.addEventListener('change', function(){ UI.vagasDe = this.value; rerender(); });
+  if(filterAte) filterAte.addEventListener('change', function(){ UI.vagasAte = this.value; rerender(); });
+  if(filterDepto) filterDepto.addEventListener('change', function(){ UI.vagasDepto = this.value; rerender(); });
+  if(filterLider) filterLider.addEventListener('change', function(){ UI.vagasLider = this.value; rerender(); });
+  if(filterStatus) filterStatus.addEventListener('change', function(){ UI.vagasStatus = this.value; rerender(); });
 }
 
 /* =========================================================
