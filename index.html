@@ -996,6 +996,33 @@ let DB = {
 const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
 var _ghReceiving = false;
 
+// Merge two arrays by unique key (union — never loses records)
+function _ghMergeArrays(localArr, remoteArr, keyFn){
+  if(!localArr || !localArr.length) return remoteArr || [];
+  if(!remoteArr || !remoteArr.length) return localArr || [];
+  var merged = [];
+  var seen = new Set();
+  // Remote records first (they are the "source of truth" for shared records)
+  remoteArr.forEach(function(r){
+    var k = keyFn(r);
+    if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
+    else if(!k){ merged.push(r); }
+  });
+  // Add local-only records (not in remote)
+  localArr.forEach(function(r){
+    var k = keyFn(r);
+    if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
+  });
+  return merged;
+}
+function _ghRecordKey(key, r){
+  if(r.id) return String(r.id);
+  if(key==='colaboradores'||key==='bancoHorasImport') return normalizeStr(r.nome||r.Nome||'');
+  if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.ultimoDia||r.mesRaw||'');
+  if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.mesRaw||r.mesDate||'');
+  return r.id ? String(r.id) : null;
+}
+
 /* ---- GITHUB SYNC ENGINE ---- */
 const GH_SYNC = {
   owner: 'planningbp',
@@ -1048,12 +1075,33 @@ async function ghRead(key){
   } catch(e){ console.warn('GH read error ('+key+'):', e); return null; }
 }
 
-// Write a single key to GitHub
+// Write a single key to GitHub (with merge to avoid overwriting other BPs' data)
 async function ghWrite(key, value){
   try {
+    // Read current remote data and merge with local before writing
+    var remote = await ghRead(key);
+    var localStripped = _ghStripBinary(key, value);
+    var toWrite = localStripped;
+    if(remote && Array.isArray(remote) && Array.isArray(localStripped)){
+      // Merge: local records override remote, remote-only records preserved
+      var merged = [];
+      var seen = new Set();
+      var kf = function(r){ return _ghRecordKey(key, r); };
+      // Local records first (they take priority — user just edited them)
+      localStripped.forEach(function(r){
+        var k = kf(r);
+        if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
+        else if(!k){ merged.push(r); }
+      });
+      // Add remote-only records (from other BPs)
+      remote.forEach(function(r){
+        var k = kf(r);
+        if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
+      });
+      toWrite = merged;
+    }
     var url = GH_SYNC._apiBase()+key+'.json';
-    var stripped = _ghStripBinary(key, value);
-    var jsonStr = JSON.stringify(stripped);
+    var jsonStr = JSON.stringify(toWrite);
     var content = btoa(unescape(encodeURIComponent(jsonStr)));
     var body = {message:'sync: '+key, content:content, branch:GH_SYNC.branch};
     if(GH_SYNC._shas[key]) body.sha = GH_SYNC._shas[key];
@@ -1107,7 +1155,7 @@ async function ghPoll(){
       }
     });
     if(changed.length === 0) return;
-    // Fetch changed keys
+    // Fetch changed keys and MERGE with local data (never lose records)
     for(var i=0; i<changed.length; i++){
       var key = changed[i];
       var data = await ghRead(key);
@@ -1134,7 +1182,10 @@ async function ghPoll(){
         DB[key].forEach(function(p){ if(p.prints && p.prints.length){ localPrints[p.nome] = p.prints; } });
         data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
       }
-      DB[key] = data;
+      // MERGE: remote data + local-only records (never lose local data)
+      var kf = function(r){ return _ghRecordKey(key, r); };
+      var merged = _ghMergeArrays(DB[key], data, kf);
+      DB[key] = merged;
       if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
@@ -1165,38 +1216,38 @@ async function ghInitialLoad(){
       if(!GH_SYNC._shas[key]) continue;
       var data = await ghRead(key);
       if(!data || !Array.isArray(data)) continue;
-      // Only use GitHub data if it has MORE records than local (avoid overwriting local with empty)
-      if(data.length >= (DB[key]||[]).length){
-        _ghReceiving = true;
-        // Preserve local binary fields
-        if(key==='acompanhamentos' && Array.isArray(DB[key])){
-          var localRefs = {};
-          DB[key].forEach(function(a){
-            var k = a.nome+'_'+a.milestone;
-            if(a.anexoRef) localRefs[k] = {anexoRef:a.anexoRef, anexoNome:a.anexoNome};
-            else if(a.anexo) localRefs[k] = {anexo:a.anexo, anexoNome:a.anexoNome};
-          });
-          data.forEach(function(a){
-            var k = a.nome+'_'+a.milestone;
-            if(localRefs[k]){
-              if(localRefs[k].anexoRef){ a.anexoRef=localRefs[k].anexoRef; a.anexoNome=localRefs[k].anexoNome; }
-              else if(localRefs[k].anexo){ a.anexo=localRefs[k].anexo; a.anexoNome=localRefs[k].anexoNome; }
-            }
-          });
-        }
-        if(key==='processosBP' && Array.isArray(DB[key])){
-          var localPrints = {};
-          DB[key].forEach(function(p){ if(p.prints && p.prints.length){ localPrints[p.nome] = p.prints; } });
-          data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
-        }
-        DB[key] = data;
-        if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
-        saveJSON(LS[key], DB[key]);
-        _ghReceiving = false;
-        if(key==='colaboradores'){
-          if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
-          if(typeof clearMyColabsCache==='function') clearMyColabsCache();
-        }
+      _ghReceiving = true;
+      // Preserve local binary fields
+      if(key==='acompanhamentos' && Array.isArray(DB[key])){
+        var localRefs = {};
+        DB[key].forEach(function(a){
+          var k = a.nome+'_'+a.milestone;
+          if(a.anexoRef) localRefs[k] = {anexoRef:a.anexoRef, anexoNome:a.anexoNome};
+          else if(a.anexo) localRefs[k] = {anexo:a.anexo, anexoNome:a.anexoNome};
+        });
+        data.forEach(function(a){
+          var k = a.nome+'_'+a.milestone;
+          if(localRefs[k]){
+            if(localRefs[k].anexoRef){ a.anexoRef=localRefs[k].anexoRef; a.anexoNome=localRefs[k].anexoNome; }
+            else if(localRefs[k].anexo){ a.anexo=localRefs[k].anexo; a.anexoNome=localRefs[k].anexoNome; }
+          }
+        });
+      }
+      if(key==='processosBP' && Array.isArray(DB[key])){
+        var localPrints = {};
+        DB[key].forEach(function(p){ if(p.prints && p.prints.length){ localPrints[p.nome] = p.prints; } });
+        data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
+      }
+      // MERGE: remote data + local-only records (never lose data from either side)
+      var kf = function(r){ return _ghRecordKey(key, r); };
+      var merged = _ghMergeArrays(DB[key], data, kf);
+      DB[key] = merged;
+      if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
+      saveJSON(LS[key], DB[key]);
+      _ghReceiving = false;
+      if(key==='colaboradores'){
+        if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
+        if(typeof clearMyColabsCache==='function') clearMyColabsCache();
       }
     }
     // Also sync passwords
