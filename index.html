@@ -1243,10 +1243,17 @@ async function ghInitialLoad(){
       }
       // MERGE: remote + local-only records (key function uses nome for colaboradores, preventing id-based duplication)
       var kf = function(r){ return _ghRecordKey(key, r); };
+      var localLen = (DB[key]||[]).length;
+      var remoteLen = data.length;
       DB[key] = _ghMergeArrays(data, DB[key], kf);
       if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
+      // If merged result is larger than remote, push local-only records to GitHub
+      if(DB[key].length > remoteLen){
+        console.log('[GH] Initial load: local has '+localLen+' + remote has '+remoteLen+' = merged '+DB[key].length+' for '+key+'. Pushing to GitHub...');
+        ghWrite(key);
+      }
       if(key==='colaboradores'){
         if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
         if(typeof clearMyColabsCache==='function') clearMyColabsCache();
