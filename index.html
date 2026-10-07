@@ -1997,16 +1997,35 @@ function bindCrudPage(pageKey){
         const lider = normalizeStr(c.lider||c['Líder']||c.Lider||'');
         if(lider && !_nameBpMap[lider]) _nameBpMap[lider] = bp.id;
       });
+      // Also map collaborators by area (for BPs like Hadassa that use area-based assignment)
+      CONFIG.bps.forEach(bp=>{
+        if(!bp.areas || !bp.areas.length) return;
+        const bpAreas = bp.areas.map(a=>normalizeStr(a));
+        DB.colaboradores.forEach(c=>{
+          const nome = normalizeStr(c.nome||c.Nome||'');
+          if(!nome || _nameBpMap[nome]) return;
+          const cArea = normalizeStr(c.area||c.departamento||c.departamentoRaw||'');
+          if(cArea && bpAreas.includes(cArea)){
+            _nameBpMap[nome] = bp.id;
+            const lider = normalizeStr(c.lider||c['Líder']||c.Lider||'');
+            if(lider && !_nameBpMap[lider]) _nameBpMap[lider] = bp.id;
+          }
+        });
+      });
       let added=0, updated=0, skipped=0;
       parsed.forEach(p=>{
-        // Find bpId from líder field
+        // Find bpId from líder field or collaborator name
         const liderN = normalizeStr(p.lider||p.gestor||p.coordenacao||'');
+        const nomeN = normalizeStr(p.nome||'');
         if(liderN && _nameBpMap[liderN]){
           p.bpId = _nameBpMap[liderN];
-        } else if(liderN){
-          // Líder not found in any BP — skip this record
-          skipped++;
-          return;
+        } else if(nomeN && _nameBpMap[nomeN]){
+          p.bpId = _nameBpMap[nomeN];
+        } else if(liderN || nomeN){
+          // Not found in any BP map — assign to current BP as fallback
+          const _bp = currentBP();
+          if(_bp) p.bpId = _bp.id;
+          else { skipped++; return; }
         } else {
           // No líder field — assign to current BP
           const _bp = currentBP();
@@ -5158,7 +5177,9 @@ function importSummary(type){
   const arr = DB[type];
   return arr.length + ' registros importados';
 }
-function renderImportZone(type, title, desc){
+function renderImportZone(type, title, desc, acceptPDF){
+  const accept = acceptPDF ? '.xlsx,.xls,.csv,.pdf' : '.xlsx,.xls';
+  const label = acceptPDF ? '(.xlsx, .xls, .pdf)' : '(.xlsx, .xls)';
   return `
   <div class="card">
     <div class="section-title">${title}</div>
@@ -5166,8 +5187,8 @@ function renderImportZone(type, title, desc){
     <label class="import-zone" id="zone_${type}">
       ${ICONS.import}
       <h4>Arraste o arquivo aqui</h4>
-      <p>ou clique para selecionar (.xlsx, .xls)</p>
-      <input type="file" id="file_${type}" accept=".xlsx,.xls">
+      <p>ou clique para selecionar ${label}</p>
+      <input type="file" id="file_${type}" accept="${accept}">
     </label>
     <div class="import-status ${DB[type].length?'ok':''}" id="status_${type}">${DB[type].length? importSummary(type):'Nenhum arquivo importado ainda'}</div>
   </div>`;
@@ -5182,7 +5203,7 @@ function renderImport(){
   </div>
   <div class="grid grid-2" style="margin-bottom:20px;">
     ${renderImportZone('pdis','PDIs','Planos de Desenvolvimento Individual — importar planilha de PDIs.')}
-    ${renderImportZone('bancoHorasImport','Banco de Horas','Importar planilha com nome do colaborador e saldo de horas. Colunas: Nome, Horas, Observação (opcional).')}
+    ${renderImportZone('bancoHorasImport','Banco de Horas','Importar planilha ou PDF com nome do colaborador e saldo de horas. Colunas: Nome, Horas, Observação (opcional).', true)}
   </div>
   ${hasAny?'<div style="margin-bottom:20px;"><button class="btn btn-outline btn-sm" id="btnClearAllImport" style="width:auto;padding:6px 16px;color:var(--red);border-color:var(--red);">'+ICONS.trash+' Limpar todas as bases</button></div>':''}
   <div id="importPreview"></div>`;
@@ -5452,9 +5473,79 @@ function bindImport(){
     renderShellAndPage();
   });
 }
+function _finishImportMerge(type, parsed, statusEl){
+  const existing = DB[type]||[];
+  function dedupKey(r){
+    if(type==='desligamentos') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
+    if(type==='promocoes') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
+    if(type==='pdis') return normalizeStr(r.nome);
+    if(type==='bancoHorasImport') return normalizeStr(r.nome);
+    return r.id;
+  }
+  const existingKeys = new Set(existing.map(dedupKey));
+  let added=0, updated=0;
+  parsed.forEach(p=>{
+    const key = dedupKey(p);
+    if(existingKeys.has(key)){
+      const idx = existing.findIndex(e=> dedupKey(e)===key);
+      if(idx>=0){ const id=existing[idx].id; existing[idx]={...p, id}; updated++; }
+    } else {
+      existing.push(p); added++;
+    }
+  });
+  DB[type] = existing;
+  persist(type);
+  if(type==='promocoes') applyPromocoes();
+  const parts = [];
+  if(added) parts.push(added+' novos');
+  if(updated) parts.push(updated+' atualizados');
+  statusEl.textContent = (parts.length? parts.join(', ') : 'Nenhum novo registro') + ' — total: '+existing.length+' registros';
+  statusEl.className = 'import-status ok';
+  renderImportPreviewTables();
+  renderShellAndPage();
+}
 function handleImportFile(type, file){
   const statusEl = document.getElementById('status_'+type);
   statusEl.textContent = 'Processando...';
+  // Handle PDF import for bancoHorasImport
+  if(file.name.toLowerCase().endsWith('.pdf') && type==='bancoHorasImport' && window.pdfjsLib){
+    const reader = new FileReader();
+    reader.onload = async function(ev){
+      try{
+        const typedArr = new Uint8Array(ev.target.result);
+        const pdf = await pdfjsLib.getDocument({data:typedArr}).promise;
+        let fullText = '';
+        for(let p=1; p<=pdf.numPages; p++){
+          const page = await pdf.getPage(p);
+          const tc = await page.getTextContent();
+          const items = tc.items.map(item=>({str:item.str, x:item.transform[4], y:item.transform[5]}));
+          items.sort((a,b)=>b.y-a.y || a.x-b.x);
+          const rows = [];
+          let curRow = null;
+          items.forEach(item=>{
+            if(!curRow || Math.abs(item.y - curRow.y) > 4){
+              curRow = {y:item.y, parts:[]};
+              rows.push(curRow);
+            }
+            curRow.parts.push(item);
+          });
+          rows.forEach(row=>{
+            row.parts.sort((a,b)=>a.x-b.x);
+            fullText += row.parts.map(p=>p.str).join('  ').trim()+'\n';
+          });
+        }
+        const parsed = parseBancoHorasPDF(fullText);
+        if(!parsed.length){ statusEl.textContent = 'Nenhum registro encontrado no PDF. Verifique o formato.'; statusEl.className='import-status'; return; }
+        _finishImportMerge(type, parsed, statusEl);
+      }catch(err){
+        console.error('Erro ao ler PDF:', err);
+        statusEl.textContent = 'Erro ao processar PDF: '+err.message;
+        statusEl.className = 'import-status';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
   readWorkbookFile(file, function(err, rows){
     if(err){ statusEl.textContent = 'Erro ao ler o arquivo.'; statusEl.className='import-status'; return; }
     let parsed;
@@ -5472,6 +5563,9 @@ function handleImportFile(type, file){
       DB.promocoes = []; persist('promocoes');
       syncPromocoesFromText();
       statusEl.textContent = parsed.length+' colaboradores importados (base substituída)';
+      statusEl.className = 'import-status ok';
+      renderImportPreviewTables();
+      renderShellAndPage();
     } else {
       // For desligamentos/promocoes: assign bpId based on líder belonging to a BP's hierarchy
       if(type==='desligamentos' || type==='promocoes'){
@@ -5486,36 +5580,8 @@ function handleImportFile(type, file){
         });
         if(skipped > 0) console.log('[Import] '+skipped+' registros descartados (líder não encontrado em nenhuma BP)');
       }
-      const existing = DB[type]||[];
-      function dedupKey(r){
-        if(type==='desligamentos') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
-        if(type==='promocoes') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
-        if(type==='pdis') return normalizeStr(r.nome);
-        if(type==='bancoHorasImport') return normalizeStr(r.nome);
-        return r.id;
-      }
-      const existingKeys = new Set(existing.map(dedupKey));
-      let added=0, updated=0;
-      parsed.forEach(p=>{
-        const key = dedupKey(p);
-        if(existingKeys.has(key)){
-          const idx = existing.findIndex(e=> dedupKey(e)===key);
-          if(idx>=0){ const id=existing[idx].id; existing[idx]={...p, id}; updated++; }
-        } else {
-          existing.push(p); added++;
-        }
-      });
-      DB[type] = existing;
-      persist(type);
-      if(type==='promocoes') applyPromocoes();
-      const parts = [];
-      if(added) parts.push(added+' novos');
-      if(updated) parts.push(updated+' atualizados');
-      statusEl.textContent = (parts.length? parts.join(', ') : 'Nenhum novo registro') + ' — total: '+existing.length+' registros';
-    }
-    statusEl.className = 'import-status ok';
-    renderImportPreviewTables();
-    renderShellAndPage(); // refresh sidebar dot
+      _finishImportMerge(type, parsed, statusEl);
+      return;
   });
 }
 
