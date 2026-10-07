@@ -1081,6 +1081,15 @@ async function ghRead(key){
 // Write a single key to GitHub (with merge to avoid overwriting other BPs' data)
 async function ghWrite(key, value){
   try {
+    // GUARD: never write non-array data to GitHub
+    if(!Array.isArray(value)){
+      console.error('[GH] BLOCKED write of non-array data for '+key+': '+(typeof value));
+      return false;
+    }
+    if(value.length === 0){
+      console.warn('[GH] BLOCKED write of empty array for '+key+' (would erase data)');
+      return false;
+    }
     // Read current remote data and merge with local before writing
     var remote = await ghRead(key);
     var localStripped = _ghStripBinary(key, value);
@@ -1102,6 +1111,11 @@ async function ghWrite(key, value){
         if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
       });
       toWrite = merged;
+    }
+    // Final safety check before writing
+    if(!Array.isArray(toWrite) || toWrite.length === 0){
+      console.error('[GH] BLOCKED: toWrite is not a valid array for '+key);
+      return false;
     }
     var url = GH_SYNC._apiBase()+key+'.json';
     var jsonStr = JSON.stringify(toWrite);
@@ -1250,9 +1264,9 @@ async function ghInitialLoad(){
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       // If merged result is larger than remote, push local-only records to GitHub
-      if(DB[key].length > remoteLen){
+      if(Array.isArray(DB[key]) && DB[key].length > remoteLen && DB[key].length > 0){
         console.log('[GH] Initial load: local has '+localLen+' + remote has '+remoteLen+' = merged '+DB[key].length+' for '+key+'. Pushing to GitHub...');
-        ghWrite(key);
+        ghWrite(key, DB[key]);
       }
       if(key==='colaboradores'){
         if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
