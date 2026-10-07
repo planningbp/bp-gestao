@@ -7851,7 +7851,10 @@ function bindKanban(){
    LÍDERES PAGE
 ========================================================= */
 function renderLideresPage(){
-  const colabs = getMyColaboradores();
+  const _allColabs = getMyColaboradores();
+  // Excluir desligados — mostrar apenas ativos
+  const _ldrDesligNomes = new Set((DB.desligamentos||[]).map(d=>normalizeStr(d.nome||d.Nome||'')).filter(Boolean));
+  const colabs = _allColabs.filter(c=> !_ldrDesligNomes.has(normalizeStr(c.nome||c.Nome||'')));
   const fArea = UI.lideresArea||'';
   const fSearch = (UI.lideresSearch||'').toLowerCase();
   const bp = currentBP();
@@ -7876,13 +7879,30 @@ function renderLideresPage(){
     liderList = liderList.filter(l=>l.toLowerCase().includes(fSearch));
   }
 
-  const _myNames = getMyColabNames();
+  // Build team for each leader using ONLY this BP's collaborators (never the full DB)
+  function _getMyTeamForLider(liderNome, myColabs){
+    const nk = normalizeStr(liderNome);
+    // All my colabs that have this leader anywhere in their hierarchy
+    return myColabs.filter(function(c){
+      if(normalizeStr(c.lider||c['Líder']||c.Lider||'')===nk) return true;
+      if(normalizeStr(c.supervisao||'')===nk) return true;
+      if(normalizeStr(c.coordenacao||'')===nk) return true;
+      if(normalizeStr(c.gerencia||'')===nk) return true;
+      if(normalizeStr(c.diretoria||'')===nk) return true;
+      return false;
+    });
+  }
+  function _getMyDirectsForLider(liderNome, myColabs){
+    const nk = normalizeStr(liderNome);
+    return myColabs.filter(function(c){
+      return normalizeStr(c.lider||c['Líder']||c.Lider||'')===nk;
+    });
+  }
+
   function liderCard(liderNome){
-    const _fullTeam = getTeamTree(liderNome);
-    // Filter team to only MY collaborators
-    const team = _myNames ? _fullTeam.filter(c=> _myNames.has(normalizeStr(c.nome||c.Nome||''))) : _fullTeam;
-    const _fullDirects = getDirectReports(liderNome);
-    const directs = _myNames ? _fullDirects.filter(c=> _myNames.has(normalizeStr(c.nome||c.Nome||''))) : _fullDirects;
+    // Use ONLY this BP's collaborators — never the full DB
+    const team = _getMyTeamForLider(liderNome, colabs);
+    const directs = _getMyDirectsForLider(liderNome, colabs);
     const initials = liderNome.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
     const nk = normalizeStr(liderNome);
 
@@ -7968,7 +7988,7 @@ function renderLideresPage(){
         const salStr = typeof sal==='number' ? sal.toLocaleString('pt-BR',{minimumFractionDigits:2}) : sal;
         const cLider = c.lider||c['Líder']||c.Lider||'';
         const isDirect = normalizeStr(cLider)===normalizeStr(liderNome);
-        const hasSubs = getDirectReports(nome).length > 0;
+        const hasSubs = _getMyDirectsForLider(nome, colabs).length > 0;
         html += '<tr style="border-bottom:1px solid #f0f0f0;'+(i%2?'background:#fafbfc;':'')+'">'
           + '<td style="padding:8px 10px;font-weight:600;">' + esc(nome) + (hasSubs?' <span style="font-size:10px;background:#e0f2f1;color:#00695c;padding:1px 6px;border-radius:8px;">Líder</span>':'') + '</td>'
           + '<td style="padding:8px 10px;">' + esc(cargo) + '</td>'
@@ -8462,7 +8482,10 @@ function getMyExpandedAreas(){
 
 if(!UI.colabColFilters) UI.colabColFilters = {};
 function renderColaboradoresPage(){
-  const colabs = getMyColaboradores();
+  const allColabs = getMyColaboradores();
+  // Excluir desligados — mostrar apenas colaboradores ativos
+  const _desligNomes = new Set((DB.desligamentos||[]).map(d=>normalizeStr(d.nome||d.Nome||'')).filter(Boolean));
+  const colabs = allColabs.filter(c=> !_desligNomes.has(normalizeStr(c.nome||c.Nome||'')));
   const bp = currentBP();
   const colabAreas = colabs.map(c=>c.area||c.departamento||'').filter(Boolean);
   const areas = [...new Set([...(bp?getBPAreas(bp):[]), ...colabAreas])].sort();
