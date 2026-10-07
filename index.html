@@ -10042,6 +10042,9 @@ function renderOrganograma(){
   }
 
   function nodeColor(nome){
+    const match=colabs.find(c=>normalizeStr(getNome(c))===normalizeStr(nome))||DB.colaboradores.find(c=>normalizeStr(c.nome||c.Nome||'')===normalizeStr(nome));
+    const cargo=match?(match.cargo||match.Cargo||''):'';
+    if(/head|diretor|socio|sócio/i.test(cargo)) return 'var(--dark)';
     if(isHead(nome)) return 'var(--dark)';
     if(isCoordinator(nome)) return '#962DFF';
     const nk=normalizeStr(nome);
@@ -10115,7 +10118,7 @@ function renderOrganograma(){
     </div>
     <div style="margin-top:8px;">
       <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><span style="width:14px;height:14px;border-radius:4px;background:var(--dark);display:inline-block;"></span> Head</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><span style="width:14px;height:14px;border-radius:4px;background:var(--dark);display:inline-block;"></span> Sócio / Head</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><span style="width:14px;height:14px;border-radius:4px;background:#962DFF;display:inline-block;"></span> Coordenador</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;"><span style="width:14px;height:14px;border-radius:4px;background:var(--cyan);display:inline-block;"></span> Líder</div>
       </div>
@@ -11985,6 +11988,23 @@ function _migrateDesligamentosPOP(){}
     });
     if(changed) persist('processosBP');
     localStorage.setItem('_mig_deslig_rm_alertas_v1','1');
+  }
+})();
+
+// Migração: corrigir cargo de sócios (Daniel Soares de Faria e Tiago de Souza Macario)
+(function(){
+  if(!localStorage.getItem('_mig_socios_v1')){
+    var socios = ['daniel soares de faria','tiago de souza macario'];
+    var changed = false;
+    DB.colaboradores.forEach(function(c){
+      var nome = normalizeStr(c.nome||c.Nome||'');
+      if(socios.indexOf(nome)>=0 && normalizeStr(c.cargo||'')!=='socio'){
+        c.cargo = 'SÓCIO';
+        changed = true;
+      }
+    });
+    if(changed) persist('colaboradores');
+    localStorage.setItem('_mig_socios_v1','1');
   }
 })();
 
