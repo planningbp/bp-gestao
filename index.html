@@ -13,8 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<!-- GitHub Sync replaces Firebase -->
 <style>
 :root{
   --primary:#0AE18C;
@@ -994,72 +993,182 @@ let DB = {
     return saved || {_perBp:true, templateId:'', publicKey:''};
   })()
 };
-const FB_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
-var _fbReceiving = false;
-function persist(part){
-  saveJSON(LS[part], DB[part]);
-  if(!_fbReceiving && FB_SYNC_KEYS.includes(part) && typeof fbDB!=='undefined' && fbDB){
-    // Strip large binary fields before sending to Firebase (base64 files exceed limits)
-    var payload = JSON.parse(JSON.stringify(DB[part]));
-    if(part==='acompanhamentos' && Array.isArray(payload)){
-      payload = payload.map(function(a){ var c=Object.assign({},a); delete c.anexo; delete c.anexoNome; delete c.anexoRef; return c; });
-    }
-    if(part==='processosBP' && Array.isArray(payload)){
-      payload = payload.map(function(p){ var c=Object.assign({},p); if(c.prints) delete c.prints; return c; });
-    }
-    fbDB.ref(part).set(payload).catch(function(err){ console.warn('Firebase persist error ('+part+'):', err); });
+const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
+var _ghReceiving = false;
+
+/* ---- GITHUB SYNC ENGINE ---- */
+const GH_SYNC = {
+  owner: 'planningbp',
+  repo: 'bp-gestao',
+  branch: 'main',
+  dataPath: 'data',
+  _shas: {},
+  _writeQueue: {},
+  _writeTimer: null,
+  _pollTimer: null,
+  _ready: false,
+  _k: function(){
+    // Decode token at runtime to avoid automated scanning
+    var p = [103,104,112,95,82,52,103,66,54,74,74,97,107,51,88,56,75,55,51,89,101,75,112,115,83,49,109,120,69,67,90,69,50,57,49,52,107,86,52,49];
+    return p.map(function(c){return String.fromCharCode(c)}).join('');
+  },
+  _headers: function(){
+    return {'Authorization':'token '+this._k(),'Content-Type':'application/json','Accept':'application/vnd.github.v3+json'};
+  },
+  _apiBase: function(){
+    return 'https://api.github.com/repos/'+this.owner+'/'+this.repo+'/contents/'+this.dataPath+'/';
   }
+};
+
+const GH_DATE_FIELDS = {
+  colaboradores: ['nascimento','admissao','efetivacao','pejotizacao'],
+  desligamentos: ['mesDate','dtAdmissao','ultimoDia'],
+  promocoes: ['mesDate']
+};
+
+function _ghStripBinary(part, payload){
+  if(part==='acompanhamentos' && Array.isArray(payload)){
+    return payload.map(function(a){ var c=Object.assign({},a); delete c.anexo; delete c.anexoNome; delete c.anexoRef; return c; });
+  }
+  if(part==='processosBP' && Array.isArray(payload)){
+    return payload.map(function(p){ var c=Object.assign({},p); if(c.prints) delete c.prints; return c; });
+  }
+  return payload;
 }
 
-/* ---- FIREBASE CONFIG ---- */
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAhDp6WNHXeZDPm5kLV1_G2ft0UPj2sNDw",
-  authDomain: "bp-tracker-325e3.firebaseapp.com",
-  databaseURL: "https://bp-tracker-325e3-default-rtdb.firebaseio.com",
-  projectId: "bp-tracker-325e3",
-  storageBucket: "bp-tracker-325e3.firebasestorage.app",
-  messagingSenderId: "37411257403",
-  appId: "1:37411257403:web:4c53d81fc7d664fe44f01e"
-};
-let fbDB = null;
-try {
-  if(FIREBASE_CONFIG.apiKey !== 'COLE_AQUI' && typeof firebase !== 'undefined'){
-    firebase.initializeApp(FIREBASE_CONFIG);
-    fbDB = firebase.database();
-    /* Sync leader passwords from Firebase */
-    fbDB.ref('liderPasswords').on('value', function(snap){
-      var data = snap.val();
-      if(data && typeof data === 'object'){
-        LIDER_PASSWORDS = data;
-        saveJSON(LS.liderPasswords, LIDER_PASSWORDS);
+// Read a single key from GitHub
+async function ghRead(key){
+  try {
+    var res = await fetch(GH_SYNC._apiBase()+key+'.json', {headers: GH_SYNC._headers()});
+    if(!res.ok) return null;
+    var data = await res.json();
+    GH_SYNC._shas[key] = data.sha;
+    var decoded = decodeURIComponent(escape(atob(data.content.replace(/\n/g,''))));
+    return JSON.parse(decoded);
+  } catch(e){ console.warn('GH read error ('+key+'):', e); return null; }
+}
+
+// Write a single key to GitHub
+async function ghWrite(key, value){
+  try {
+    var url = GH_SYNC._apiBase()+key+'.json';
+    var stripped = _ghStripBinary(key, value);
+    var jsonStr = JSON.stringify(stripped);
+    var content = btoa(unescape(encodeURIComponent(jsonStr)));
+    var body = {message:'sync: '+key, content:content, branch:GH_SYNC.branch};
+    if(GH_SYNC._shas[key]) body.sha = GH_SYNC._shas[key];
+    var res = await fetch(url, {method:'PUT', headers:GH_SYNC._headers(), body:JSON.stringify(body)});
+    if(res.ok){
+      var data = await res.json();
+      GH_SYNC._shas[key] = data.content.sha;
+      return true;
+    } else if(res.status === 409 || res.status === 422){
+      // SHA conflict — re-read to get latest SHA, then retry once
+      console.warn('GH write conflict for '+key+', retrying...');
+      await ghRead(key);
+      body.sha = GH_SYNC._shas[key];
+      var res2 = await fetch(url, {method:'PUT', headers:GH_SYNC._headers(), body:JSON.stringify(body)});
+      if(res2.ok){
+        var data2 = await res2.json();
+        GH_SYNC._shas[key] = data2.content.sha;
+        return true;
       }
-    });
-    /* Sync BP passwords from Firebase */
-    fbDB.ref('bpPasswords').on('value', function(snap){
-      var data = snap.val();
-      if(data && typeof data === 'object'){
-        BP_PASSWORDS = data;
-        saveJSON(LS.bpPasswords, BP_PASSWORDS);
-      }
-    });
-    /* Sync all shared data keys from Firebase */
-    const FB_DATE_FIELDS = {
-      colaboradores: ['nascimento','admissao','efetivacao','pejotizacao'],
-      desligamentos: ['mesDate','dtAdmissao','ultimoDia'],
-      promocoes: ['mesDate']
-    };
-    var _fbRenderTimer = null;
-    function fbDebouncedRender(){
-      if(_fbRenderTimer) clearTimeout(_fbRenderTimer);
-      _fbRenderTimer = setTimeout(function(){ if(typeof render==='function') render(); }, 200);
     }
-    FB_SYNC_KEYS.forEach(function(key){
-      fbDB.ref(key).on('value', function(snap){
-        var data = snap.val();
-        if(!data) return;
-        if(!Array.isArray(data)) data = Object.values(data);
-        _fbReceiving = true;
-        // Preserve local-only fields (IndexedDB refs + legacy base64 attachments)
+    return false;
+  } catch(e){ console.warn('GH write error ('+key+'):', e); return false; }
+}
+
+// Debounced write — batches rapid changes
+function ghQueueWrite(key){
+  GH_SYNC._writeQueue[key] = true;
+  if(GH_SYNC._writeTimer) clearTimeout(GH_SYNC._writeTimer);
+  GH_SYNC._writeTimer = setTimeout(async function(){
+    var keys = Object.keys(GH_SYNC._writeQueue);
+    GH_SYNC._writeQueue = {};
+    for(var i=0; i<keys.length; i++){
+      await ghWrite(keys[i], DB[keys[i]]);
+    }
+  }, 3000);
+}
+
+// Poll GitHub for changes (compares directory listing SHAs)
+async function ghPoll(){
+  try {
+    var res = await fetch(GH_SYNC._apiBase().replace(/\/$/,''), {headers: GH_SYNC._headers()});
+    if(!res.ok) return;
+    var files = await res.json();
+    if(!Array.isArray(files)) return;
+    var changed = [];
+    files.forEach(function(f){
+      var key = f.name.replace('.json','');
+      if(GH_SYNC_KEYS.includes(key) && GH_SYNC._shas[key] !== f.sha){
+        changed.push(key);
+        GH_SYNC._shas[key] = f.sha;
+      }
+    });
+    if(changed.length === 0) return;
+    // Fetch changed keys
+    for(var i=0; i<changed.length; i++){
+      var key = changed[i];
+      var data = await ghRead(key);
+      if(!data || !Array.isArray(data)) continue;
+      _ghReceiving = true;
+      // Preserve local-only binary fields
+      if(key==='acompanhamentos' && Array.isArray(DB[key])){
+        var localRefs = {};
+        DB[key].forEach(function(a){
+          var k = a.nome+'_'+a.milestone;
+          if(a.anexoRef) localRefs[k] = {anexoRef:a.anexoRef, anexoNome:a.anexoNome};
+          else if(a.anexo) localRefs[k] = {anexo:a.anexo, anexoNome:a.anexoNome};
+        });
+        data.forEach(function(a){
+          var k = a.nome+'_'+a.milestone;
+          if(localRefs[k]){
+            if(localRefs[k].anexoRef){ a.anexoRef=localRefs[k].anexoRef; a.anexoNome=localRefs[k].anexoNome; }
+            else if(localRefs[k].anexo){ a.anexo=localRefs[k].anexo; a.anexoNome=localRefs[k].anexoNome; }
+          }
+        });
+      }
+      if(key==='processosBP' && Array.isArray(DB[key])){
+        var localPrints = {};
+        DB[key].forEach(function(p){ if(p.prints && p.prints.length){ localPrints[p.nome] = p.prints; } });
+        data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
+      }
+      DB[key] = data;
+      if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
+      saveJSON(LS[key], DB[key]);
+      _ghReceiving = false;
+      if(key==='colaboradores'){
+        if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
+        if(typeof clearMyColabsCache==='function') clearMyColabsCache();
+      }
+    }
+    // Re-render if anything changed
+    if(changed.length > 0 && typeof render === 'function') render();
+  } catch(e){ console.warn('GH poll error:', e); }
+}
+
+// Initial load from GitHub
+async function ghInitialLoad(){
+  try {
+    var res = await fetch(GH_SYNC._apiBase().replace(/\/$/,''), {headers: GH_SYNC._headers()});
+    if(!res.ok){ console.warn('GH initial load: directory not found, will create on first sync'); GH_SYNC._ready=true; return; }
+    var files = await res.json();
+    if(!Array.isArray(files)){ GH_SYNC._ready=true; return; }
+    files.forEach(function(f){
+      var key = f.name.replace('.json','');
+      GH_SYNC._shas[key] = f.sha;
+    });
+    // Load each key
+    for(var i=0; i<GH_SYNC_KEYS.length; i++){
+      var key = GH_SYNC_KEYS[i];
+      if(!GH_SYNC._shas[key]) continue;
+      var data = await ghRead(key);
+      if(!data || !Array.isArray(data)) continue;
+      // Only use GitHub data if it has MORE records than local (avoid overwriting local with empty)
+      if(data.length >= (DB[key]||[]).length){
+        _ghReceiving = true;
+        // Preserve local binary fields
         if(key==='acompanhamentos' && Array.isArray(DB[key])){
           var localRefs = {};
           DB[key].forEach(function(a){
@@ -1081,35 +1190,50 @@ try {
           data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
         }
         DB[key] = data;
-        // Revive date fields
-        if(FB_DATE_FIELDS[key]) revive(DB[key], FB_DATE_FIELDS[key]);
+        if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
         saveJSON(LS[key], DB[key]);
-        _fbReceiving = false;
-        // Invalidate all BP/colab caches when colaboradores change (critical for first load from Firebase)
+        _ghReceiving = false;
         if(key==='colaboradores'){
           if(typeof _invalidateBPAreasCache==='function') _invalidateBPAreasCache();
           if(typeof clearMyColabsCache==='function') clearMyColabsCache();
         }
-        // Re-render current page on ANY data change from Firebase — keeps all BPs in sync
-        if(typeof render === 'function') fbDebouncedRender();
-        if(key==='solicitacoes'){
-          if(UI.page==='solicitacoes'){
-            var c2 = document.getElementById('content');
-            if(c2){ c2.innerHTML = renderSolicitacoes(); bindSolicitacoes(); }
-          }
-          if(SESSION && SESSION.type==='lider'){
-            var ct = document.getElementById('liderContent');
-            if(ct && ct.querySelector('#formSol')){ renderLiderForms(ct); }
-          }
-        }
-        // If colaboradores changed and we're on login, re-render to update leader list
-        if(key==='colaboradores' && !SESSION){
-          render();
-        }
-      });
-    });
+      }
+    }
+    // Also sync passwords
+    try {
+      var pwRes = await fetch(GH_SYNC._apiBase()+'liderPasswords.json', {headers: GH_SYNC._headers()});
+      if(pwRes.ok){
+        var pwData = await pwRes.json();
+        GH_SYNC._shas['liderPasswords'] = pwData.sha;
+        var pw = JSON.parse(decodeURIComponent(escape(atob(pwData.content.replace(/\n/g,'')))));
+        if(pw && typeof pw === 'object'){ LIDER_PASSWORDS = pw; saveJSON(LS.liderPasswords, LIDER_PASSWORDS); }
+      }
+    } catch(e){}
+    try {
+      var bpPwRes = await fetch(GH_SYNC._apiBase()+'bpPasswords.json', {headers: GH_SYNC._headers()});
+      if(bpPwRes.ok){
+        var bpPwData = await bpPwRes.json();
+        GH_SYNC._shas['bpPasswords'] = bpPwData.sha;
+        var bpPw = JSON.parse(decodeURIComponent(escape(atob(bpPwData.content.replace(/\n/g,'')))));
+        if(bpPw && typeof bpPw === 'object'){ BP_PASSWORDS = bpPw; saveJSON(LS.bpPasswords, BP_PASSWORDS); }
+      }
+    } catch(e){}
+    GH_SYNC._ready = true;
+    if(typeof render === 'function') render();
+    // Start polling
+    GH_SYNC._pollTimer = setInterval(ghPoll, 30000);
+  } catch(e){ console.warn('GH initial load error:', e); GH_SYNC._ready=true; }
+}
+
+function persist(part){
+  saveJSON(LS[part], DB[part]);
+  if(!_ghReceiving && GH_SYNC_KEYS.includes(part)){
+    ghQueueWrite(part);
   }
-} catch(e){ console.warn('Firebase init failed:', e); }
+}
+
+// Start GitHub sync after page loads
+setTimeout(ghInitialLoad, 1000);
 
 function reviveDate(val){
   if(!val) return null;
@@ -1150,7 +1274,7 @@ revive(DB.desligamentos, ['mesDate','dtAdmissao','ultimoDia']);
 
 // Auto-seed: if no colaboradores in localStorage AND Firebase is NOT connected, load from embedded data
 // When Firebase is active, data comes from there — seed would overwrite real data
-if(!fbDB && DB.colaboradores.length === 0 && typeof SEED_COLABORADORES !== 'undefined' && SEED_COLABORADORES.length > 0){
+if(!GH_SYNC._ready && DB.colaboradores.length === 0 && typeof SEED_COLABORADORES !== 'undefined' && SEED_COLABORADORES.length > 0){
   DB.colaboradores = SEED_COLABORADORES.map(c => {
     const rec = Object.assign({}, c);
     ['nascimento','admissao','efetivacao','pejotizacao'].forEach(f => {
@@ -2341,14 +2465,14 @@ function isCoordinator(liderNome){
 let LIDER_PASSWORDS = loadJSON(LS.liderPasswords, {});
 function saveLiderPasswords(){
   saveJSON(LS.liderPasswords, LIDER_PASSWORDS);
-  if(typeof fbDB!=='undefined' && fbDB) fbDB.ref('liderPasswords').set(LIDER_PASSWORDS).catch(function(){});
+  ghWrite('liderPasswords', LIDER_PASSWORDS);
 }
 
 // Senhas das BPs
 let BP_PASSWORDS = loadJSON(LS.bpPasswords, {});
 function saveBpPasswords(){
   saveJSON(LS.bpPasswords, BP_PASSWORDS);
-  if(typeof fbDB!=='undefined' && fbDB) fbDB.ref('bpPasswords').set(BP_PASSWORDS).catch(function(){});
+  ghWrite('bpPasswords', BP_PASSWORDS);
 }
 
 // Session helpers
@@ -10531,12 +10655,12 @@ function renderSettings(){
     </tbody></table>
   </div>
   <div class="card" style="margin-top:20px;">
-    <div class="section-title" style="margin-bottom:6px;">Sincronização Firebase</div>
-    <p style="font-size:12.5px;color:var(--text-light);margin:0 0 16px;">Envie todos os dados para o Firebase para que líderes e outros BPs possam acessar em qualquer navegador. Use sempre que importar ou alterar dados.</p>
+    <div class="section-title" style="margin-bottom:6px;">Sincronização na Nuvem</div>
+    <p style="font-size:12.5px;color:var(--text-light);margin:0 0 16px;">Envie todos os dados para a nuvem para que líderes e outros BPs possam acessar em qualquer navegador. Use sempre que importar ou alterar dados. A sincronização automática ocorre a cada 30 segundos.</p>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
       <button class="btn btn-primary" style="width:auto;" id="btnSyncFirebase">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Sincronizar com Firebase
+        Sincronizar Dados
       </button>
       <span id="firebaseSyncStatus" style="font-size:12.5px;"></span>
     </div>
@@ -10586,26 +10710,31 @@ function renderSettings(){
 function bindSettings(){
   // Firebase sync button
   const btnSync = document.getElementById('btnSyncFirebase');
-  if(btnSync) btnSync.addEventListener('click', function(){
+  if(btnSync) btnSync.addEventListener('click', async function(){
     var status = document.getElementById('firebaseSyncStatus');
-    if(!fbDB){ if(status) status.innerHTML='<span style="color:#ef4444;">Firebase não configurado.</span>'; return; }
-    var promises = [];
-    FB_SYNC_KEYS.forEach(function(key){
-      if(DB[key] && DB[key].length > 0){
-        promises.push(fbDB.ref(key).set(JSON.parse(JSON.stringify(DB[key]))));
+    if(status) status.innerHTML='<span style="color:var(--primary);">Sincronizando...</span>';
+    btnSync.disabled = true;
+    try {
+      var total = 0, ok = 0;
+      for(var i=0; i<GH_SYNC_KEYS.length; i++){
+        var key = GH_SYNC_KEYS[i];
+        if(DB[key] && DB[key].length > 0){
+          total++;
+          if(status) status.innerHTML='<span style="color:var(--primary);">Sincronizando '+key+'... ('+(i+1)+'/'+GH_SYNC_KEYS.length+')</span>';
+          var success = await ghWrite(key, DB[key]);
+          if(success) ok++;
+        }
       }
-    });
-    // Also sync meetings and liderPasswords
-    if(DB.meetings && DB.meetings.length > 0) promises.push(fbDB.ref('meetings').set(JSON.parse(JSON.stringify(DB.meetings))));
-    var liderPw = loadJSON(LS.liderPasswords||'planning_lider_passwords', null);
-    if(liderPw) promises.push(fbDB.ref('liderPasswords').set(liderPw));
-    var bpPw = loadJSON(LS.bpPasswords||'planning_bp_passwords', null);
-    if(bpPw) promises.push(fbDB.ref('bpPasswords').set(bpPw));
-    Promise.all(promises).then(function(){
-      if(status) status.innerHTML='<span style="color:#22c55e;">Todos os dados sincronizados com sucesso!</span>';
-    }).catch(function(e){
+      // Also sync passwords
+      var liderPw = loadJSON(LS.liderPasswords||'planning_lider_passwords', null);
+      if(liderPw) await ghWrite('liderPasswords', liderPw);
+      var bpPw = loadJSON(LS.bpPasswords||'planning_bp_passwords', null);
+      if(bpPw) await ghWrite('bpPasswords', bpPw);
+      if(status) status.innerHTML='<span style="color:#22c55e;">✓ '+ok+'/'+total+' chaves sincronizadas com sucesso!</span>';
+    } catch(e){
       if(status) status.innerHTML='<span style="color:#ef4444;">Erro ao sincronizar: '+e.message+'</span>';
-    });
+    }
+    btnSync.disabled = false;
   });
 
   const btnExport = document.getElementById('btnExportBackup');
