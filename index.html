@@ -5291,8 +5291,21 @@ function renderShellAndPage(){
 /* =========================================================
    IMPORT PAGE
 ========================================================= */
+function _filterByMyBP(arr){
+  const bp = currentBP();
+  if(!bp) return arr;
+  const myNames = getMyColabNames();
+  const myAreas = getMyExpandedAreas();
+  return arr.filter(function(r){
+    var nome = normalizeStr(r.nome||r.Nome||'');
+    if(nome && myNames.has(nome)) return true;
+    var area = normalizeStr(r.area||r.departamento||r.departamentoRaw||'');
+    if(area && myAreas.has(area)) return true;
+    return false;
+  });
+}
 function importSummary(type){
-  const arr = DB[type];
+  const arr = _filterByMyBP(DB[type]);
   return arr.length + ' registros importados';
 }
 function renderImportZone(type, title, desc, acceptPDF){
@@ -5312,7 +5325,8 @@ function renderImportZone(type, title, desc, acceptPDF){
   </div>`;
 }
 function renderImport(){
-  const hasAny = DB.colaboradores.length || DB.desligamentos.length || DB.promocoes.length || DB.pdis.length || DB.bancoHorasImport.length;
+  const _myC = getMyColaboradores(), _myD = _filterByMyBP(DB.desligamentos), _myP = _filterByMyBP(DB.promocoes), _myPd = _filterByMyBP(DB.pdis), _myBH = _filterByMyBP(DB.bancoHorasImport);
+  const hasAny = _myC.length || _myD.length || _myP.length || _myPd.length || _myBH.length;
   return `
   <div class="grid grid-3" style="margin-bottom:20px;">
     ${renderImportZone('colaboradores','Colaboradores','Base completa de colaboradores ativos e histórico.')}
@@ -5327,7 +5341,11 @@ function renderImport(){
   <div id="importPreview"></div>`;
 }
 function renderImportPreviewTables(){
-  const c = DB.colaboradores, d = DB.desligamentos, p = DB.promocoes;
+  const c = getMyColaboradores(), d = _filterByMyBP(DB.desligamentos), p = _filterByMyBP(DB.promocoes);
+  // Map filtered indices back to original DB indices for edit/delete
+  const cIdx = c.map(function(r){ return DB.colaboradores.indexOf(r); });
+  const dIdx = d.map(function(r){ return DB.desligamentos.indexOf(r); });
+  const pIdx = p.map(function(r){ return DB.promocoes.indexOf(r); });
   let html = '';
   const S = 'border:none;background:transparent;width:100%;font-size:12px;padding:2px 0;';
   const del = (db,i) => `<button class="imp-del" data-imp-db="${db}" data-imp-row="${i}" title="Remover" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;font-weight:700;">✕</button>`;
@@ -5342,11 +5360,11 @@ function renderImportPreviewTables(){
     <div style="display:flex;align-items:center;justify-content:space-between;"><div class="section-title" style="margin:0;">Colaboradores (${c.length})</div>${add('colaboradores','colaborador')}</div>
     <div class="table-wrap" style="margin-top:8px;overflow-x:auto;"><table style="min-width:1600px;"><thead><tr>${cCols.map(h=>`<th style="font-size:11px;white-space:nowrap;">${h}</th>`).join('')}<th style="width:36px;"></th></tr></thead><tbody>
     ${!c.length?`<tr><td colspan="${cCols.length+1}" style="text-align:center;color:var(--text-light);padding:12px;">Nenhum registro.</td></tr>`
-      :c.map((r,i)=>`<tr>${cKeys.map(k=>{
+      :c.map((r,i)=>{const oi=cIdx[i];return`<tr>${cKeys.map(k=>{
         if(k==='_area') return '<td>'+areaCell(r)+'</td>';
-        if(k==='nascimento'||k==='admissao'||k==='efetivacao'||k==='pejotizacao') return '<td>'+inp('colaboradores',i,k+'Str',fmtDate(r[k]))+'</td>';
-        return '<td>'+inp('colaboradores',i,k,r[k])+'</td>';
-      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('colaboradores',i)}</td></tr>`).join('')}
+        if(k==='nascimento'||k==='admissao'||k==='efetivacao'||k==='pejotizacao') return '<td>'+inp('colaboradores',oi,k+'Str',fmtDate(r[k]))+'</td>';
+        return '<td>'+inp('colaboradores',oi,k,r[k])+'</td>';
+      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('colaboradores',oi)}</td></tr>`}).join('')}
     </tbody></table></div>
   </div>`;
 
@@ -5357,11 +5375,11 @@ function renderImportPreviewTables(){
     <div style="display:flex;align-items:center;justify-content:space-between;"><div class="section-title" style="margin:0;">Desligamentos (${d.length})</div>${add('desligamentos','desligamento')}</div>
     <div class="table-wrap" style="margin-top:8px;overflow-x:auto;"><table style="min-width:1400px;"><thead><tr>${dCols.map(h=>`<th style="font-size:11px;white-space:nowrap;">${h}</th>`).join('')}<th style="width:36px;"></th></tr></thead><tbody>
     ${!d.length?`<tr><td colspan="${dCols.length+1}" style="text-align:center;color:var(--text-light);padding:12px;">Nenhum registro.</td></tr>`
-      :d.map((r,i)=>`<tr>${dKeys.map(k=>{
+      :d.map((r,i)=>{const oi=dIdx[i];return`<tr>${dKeys.map(k=>{
         if(k==='_area') return '<td>'+areaCell(r)+'</td>';
-        if(k==='mesDate'||k==='dtAdmissao'||k==='ultimoDia') return '<td>'+inp('desligamentos',i,k+'Str',fmtDate(r[k]))+'</td>';
-        return '<td>'+inp('desligamentos',i,k,r[k])+'</td>';
-      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('desligamentos',i)}</td></tr>`).join('')}
+        if(k==='mesDate'||k==='dtAdmissao'||k==='ultimoDia') return '<td>'+inp('desligamentos',oi,k+'Str',fmtDate(r[k]))+'</td>';
+        return '<td>'+inp('desligamentos',oi,k,r[k])+'</td>';
+      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('desligamentos',oi)}</td></tr>`}).join('')}
     </tbody></table></div>
   </div>`;
 
@@ -5372,28 +5390,29 @@ function renderImportPreviewTables(){
     <div style="display:flex;align-items:center;justify-content:space-between;"><div class="section-title" style="margin:0;">Promoções (${p.length})</div>${add('promocoes','promoção')}</div>
     <div class="table-wrap" style="margin-top:8px;overflow-x:auto;"><table style="min-width:1200px;"><thead><tr>${pCols.map(h=>`<th style="font-size:11px;white-space:nowrap;">${h}</th>`).join('')}<th style="width:36px;"></th></tr></thead><tbody>
     ${!p.length?`<tr><td colspan="${pCols.length+1}" style="text-align:center;color:var(--text-light);padding:12px;">Nenhum registro.</td></tr>`
-      :p.map((r,i)=>`<tr>${pKeys.map(k=>{
+      :p.map((r,i)=>{const oi=pIdx[i];return`<tr>${pKeys.map(k=>{
         if(k==='_area') return '<td>'+areaCell(r)+'</td>';
-        if(k==='mesDate') return '<td>'+inp('promocoes',i,k+'Str',fmtDate(r[k]))+'</td>';
-        if(k==='pct') return '<td>'+inp('promocoes',i,'pctStr',r.pct!=null?fmtPct(r.pct*100):'')+'</td>';
-        return '<td>'+inp('promocoes',i,k,r[k])+'</td>';
-      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('promocoes',i)}</td></tr>`).join('')}
+        if(k==='mesDate') return '<td>'+inp('promocoes',oi,k+'Str',fmtDate(r[k]))+'</td>';
+        if(k==='pct') return '<td>'+inp('promocoes',oi,'pctStr',r.pct!=null?fmtPct(r.pct*100):'')+'</td>';
+        return '<td>'+inp('promocoes',oi,k,r[k])+'</td>';
+      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('promocoes',oi)}</td></tr>`}).join('')}
     </tbody></table></div>
   </div>`;
 
   // === PDIs ===
-  const pd = DB.pdis;
+  const pd = _filterByMyBP(DB.pdis);
+  const pdIdx = pd.map(function(r){ return DB.pdis.indexOf(r); });
   if(pd.length){
     const pdCols = ['Nome','Status','Líder','Aprovado?','Área','Total Áreas','Não iniciada','Em progresso','Finalizada','Atualizado em'];
     const pdKeys = ['nome','status','lider','aprovado','area','totalAreas','naoIniciada','emProgresso','finalizada','atualizadoEm'];
     html += `<div class="card" style="margin-bottom:18px;">
       <div style="display:flex;align-items:center;justify-content:space-between;"><div class="section-title" style="margin:0;">PDIs (${pd.length})</div></div>
       <div class="table-wrap" style="margin-top:8px;overflow-x:auto;"><table style="min-width:1000px;"><thead><tr>${pdCols.map(h=>`<th style="font-size:11px;white-space:nowrap;">${h}</th>`).join('')}<th style="width:36px;"></th></tr></thead><tbody>
-      ${pd.map((r,i)=>`<tr>${pdKeys.map(k=>{
+      ${pd.map((r,i)=>{const oi=pdIdx[i];return`<tr>${pdKeys.map(k=>{
         if(k==='area') return '<td>'+(r.area?'<span class="badge badge-green">'+r.area+'</span>':'<span class="badge badge-red">sem match</span>')+'</td>';
         if(k==='aprovado') return '<td><span style="color:'+(r.aprovado==='Sim'?'#14C8FA':'#FA6914')+';font-weight:600;">'+esc(r.aprovado||'')+'</span></td>';
-        return '<td>'+inp('pdis',i,k,r[k])+'</td>';
-      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('pdis',i)}</td></tr>`).join('')}
+        return '<td>'+inp('pdis',oi,k,r[k])+'</td>';
+      }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('pdis',oi)}</td></tr>`}).join('')}
       </tbody></table></div>
     </div>`;
   }
