@@ -5660,7 +5660,7 @@ function openAddModal(db){
 }
 function bindImport(){
   renderImportPreviewTables();
-  ['colaboradores','desligamentos','promocoes','pdis'].forEach(type=>{
+  ['colaboradores','desligamentos','promocoes','pdis','bancoHorasImport'].forEach(type=>{
     const zone = document.getElementById('zone_'+type);
     const input = document.getElementById('file_'+type);
     input.addEventListener('change', function(){ if(this.files[0]) handleImportFile(type, this.files[0]); });
@@ -7873,9 +7873,13 @@ function renderLideresPage(){
     liderList = liderList.filter(l=>l.toLowerCase().includes(fSearch));
   }
 
+  const _myNames = getMyColabNames();
   function liderCard(liderNome){
-    const team = getTeamTree(liderNome);
-    const directs = getDirectReports(liderNome);
+    const _fullTeam = getTeamTree(liderNome);
+    // Filter team to only MY collaborators
+    const team = _myNames ? _fullTeam.filter(c=> _myNames.has(normalizeStr(c.nome||c.Nome||''))) : _fullTeam;
+    const _fullDirects = getDirectReports(liderNome);
+    const directs = _myNames ? _fullDirects.filter(c=> _myNames.has(normalizeStr(c.nome||c.Nome||''))) : _fullDirects;
     const initials = liderNome.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
     const nk = normalizeStr(liderNome);
 
