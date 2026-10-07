@@ -996,6 +996,41 @@ let DB = {
 const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1'];
 var _ghReceiving = false;
 
+// === STARTUP DEDUP: clean localStorage duplicates immediately ===
+(function _startupDedup(){
+  var keys = ['colaboradores','desligamentos','promocoes','bancoHorasImport'];
+  keys.forEach(function(key){
+    var arr = DB[key];
+    if(!Array.isArray(arr) || arr.length < 2) return;
+    var seen = new Set();
+    var before = arr.length;
+    DB[key] = arr.filter(function(r){
+      var k;
+      if(key==='colaboradores'||key==='bancoHorasImport'){
+        k = normalizeStr(r.nome||r.Nome||'');
+      } else if(key==='desligamentos'){
+        var dt = r.ultimoDia||r.mesRaw||'';
+        if(dt instanceof Date) dt = dt.toISOString().slice(0,10);
+        else if(dt){ try{ var dd=new Date(String(dt)); if(!isNaN(dd.getTime())) dt=dd.toISOString().slice(0,10); }catch(e){} }
+        k = normalizeStr(r.nome||'')+'|'+(dt||'');
+      } else if(key==='promocoes'){
+        var dt2 = r.mesRaw||r.mesDate||'';
+        if(dt2 instanceof Date) dt2 = dt2.toISOString().slice(0,10);
+        else if(dt2){ try{ var dd2=new Date(String(dt2)); if(!isNaN(dd2.getTime())) dt2=dd2.toISOString().slice(0,10); }catch(e){} }
+        k = normalizeStr(r.nome||'')+'|'+(dt2||'');
+      }
+      if(!k) return true;
+      if(seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if(DB[key].length < before){
+      console.log('[DEDUP] Startup: '+key+' '+before+' -> '+DB[key].length);
+      saveJSON(LS[key], DB[key]);
+    }
+  });
+})();
+
 // Merge two arrays by unique key (union — never loses records)
 function _ghMergeArrays(localArr, remoteArr, keyFn){
   if(!localArr || !localArr.length) return remoteArr || [];
@@ -1120,6 +1155,19 @@ async function ghWrite(key, value){
         if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
       });
       toWrite = merged;
+    }
+    // Final dedup before writing (prevent pushing duplicates to GitHub)
+    if(Array.isArray(toWrite)){
+      var wSeen = new Set();
+      var wBefore = toWrite.length;
+      toWrite = toWrite.filter(function(r){
+        var wk = _ghRecordKey(key, r);
+        if(!wk) return true;
+        if(wSeen.has(wk)) return false;
+        wSeen.add(wk);
+        return true;
+      });
+      if(toWrite.length < wBefore) console.log('[GH] Write dedup '+key+': '+wBefore+' -> '+toWrite.length);
     }
     // Final safety check before writing
     if(!Array.isArray(toWrite) || toWrite.length === 0){
