@@ -1016,11 +1016,14 @@ function _ghMergeArrays(localArr, remoteArr, keyFn){
   return merged;
 }
 function _ghRecordKey(key, r){
-  if(r.id) return String(r.id);
+  // For colaboradores and bancoHorasImport, ALWAYS use nome as key (ids differ between imports)
   if(key==='colaboradores'||key==='bancoHorasImport') return normalizeStr(r.nome||r.Nome||'');
+  // For desligamentos and promocoes, use nome+date composite key
   if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.ultimoDia||r.mesRaw||'');
   if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+normalizeStr(r.mesRaw||r.mesDate||'');
-  return r.id ? String(r.id) : null;
+  // For other keys, use id if available
+  if(r.id) return String(r.id);
+  return null;
 }
 
 /* ---- GITHUB SYNC ENGINE ---- */
