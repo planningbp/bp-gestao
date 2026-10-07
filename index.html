@@ -1241,10 +1241,9 @@ async function ghInitialLoad(){
         DB[key].forEach(function(p){ if(p.prints && p.prints.length){ localPrints[p.nome] = p.prints; } });
         data.forEach(function(p){ if(localPrints[p.nome]){ p.prints = localPrints[p.nome]; } });
       }
-      // MERGE: remote data + local-only records (never lose data from either side)
-      var kf = function(r){ return _ghRecordKey(key, r); };
-      var merged = _ghMergeArrays(DB[key], data, kf);
-      DB[key] = merged;
+      // REPLACE: GitHub is the source of truth on initial load
+      // (merge was causing duplication due to id-based key mismatches)
+      DB[key] = data;
       if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
