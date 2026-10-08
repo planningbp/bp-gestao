@@ -1008,8 +1008,10 @@ var _ghReceiving = false;
     var before = arr.length;
     DB[key] = arr.filter(function(r){
       var k;
-      if(key==='colaboradores'||key==='bancoHorasImport'){
+      if(key==='colaboradores'){
         k = normalizeStr(r.nome||r.Nome||'');
+      } else if(key==='bancoHorasImport'){
+        k = normalizeStr(r.nome||r.Nome||'')+'|'+(r.periodo||'');
       } else if(key==='desligamentos'){
         var dt = r.ultimoDia||r.mesRaw||'';
         if(dt instanceof Date) dt = dt.toISOString().slice(0,10);
@@ -1065,7 +1067,8 @@ function _ghStableDateStr(v){
 }
 function _ghRecordKey(key, r){
   // For colaboradores and bancoHorasImport, ALWAYS use nome as key (ids differ between imports)
-  if(key==='colaboradores'||key==='bancoHorasImport') return normalizeStr(r.nome||r.Nome||'');
+  if(key==='colaboradores') return normalizeStr(r.nome||r.Nome||'');
+  if(key==='bancoHorasImport') return normalizeStr(r.nome||r.Nome||'')+'|'+(r.periodo||'');
   // For desligamentos and promocoes, use nome+date composite key (stable date format)
   if(key==='desligamentos') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.ultimoDia||r.mesRaw);
   if(key==='promocoes') return normalizeStr(r.nome||'')+'|'+_ghStableDateStr(r.mesRaw||r.mesDate);
@@ -1820,13 +1823,30 @@ function enpsColor(val){
   return '#ff4343';
 }
 
-function parseBancoHorasImport(rows){
+function parseBancoHorasImport(rows, filename){
   // Flexible: tries to detect columns by header names
   const header = (rows[0]||[]).map(h=>(h||'').toString().toLowerCase().trim());
   const colIdx = (keywords) => header.findIndex(h=> keywords.some(k=>h.includes(k)));
   const iNome = colIdx(['nome','colaborador','funcionário','funcionario']);
   const iHoras = colIdx(['hora','banco','saldo']);
   const iObs = colIdx(['obs','observ','comentário','comentario']);
+  const iPeriodo = colIdx(['período','periodo','mês','mes','competência','competencia']);
+  // Try to extract period from all rows text or filename
+  let periodo = '';
+  if(iPeriodo >= 0){
+    // Use first data row's period
+    for(let i=1; i<rows.length; i++){
+      if(rows[i] && rows[i][iPeriodo]){
+        periodo = (rows[i][iPeriodo]||'').toString().trim();
+        break;
+      }
+    }
+  }
+  if(!periodo){
+    // Try to find period in header row or first rows
+    var allText = rows.slice(0, Math.min(5, rows.length)).map(function(r){ return (r||[]).join(' '); }).join(' ');
+    periodo = _extractPeriodFromBH(allText) || _extractPeriodFromFilename(filename);
+  }
   const out = [];
   for(let i=1; i<rows.length; i++){
     const r = rows[i]; if(!r) continue;
@@ -1834,10 +1854,11 @@ function parseBancoHorasImport(rows){
     if(!nome) continue;
     const horas = (r[iHoras>=0?iHoras:1]||'').toString().trim();
     const obs = iObs>=0 ? (r[iObs]||'').toString().trim() : '';
+    const rowPeriodo = (iPeriodo>=0 && r[iPeriodo]) ? (r[iPeriodo]||'').toString().trim() : periodo;
     // Lookup colaborador for cargo, lider, area
     const colab = DB.colaboradores.find(c=> normalizeStr(c.nome)===normalizeStr(nome));
     out.push({
-      id: uid(), nome, horas, observacao: obs,
+      id: uid(), nome, horas, observacao: obs, periodo: rowPeriodo,
       cargo: colab ? colab.cargo||'' : '',
       lider: colab ? colab.lider||'' : '',
       area: colab ? (colab.area||colab.departamentoRaw||'') : ''
@@ -1846,10 +1867,49 @@ function parseBancoHorasImport(rows){
   return out;
 }
 
-function parseBancoHorasPDF(text){
+function _extractPeriodFromBH(text){
+  // Try to find "Período: DD/MM/YYYY a DD/MM/YYYY" or "Período: MM/YYYY" or similar
+  var m = text.match(/per[ií]odo\s*:?\s*(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|ate|-)\s*(\d{2}\/\d{2}\/\d{4})/i);
+  if(m){
+    // Use the start date's month/year as period
+    var parts = m[1].split('/');
+    return parts[1]+'/'+parts[2]; // MM/YYYY
+  }
+  m = text.match(/per[ií]odo\s*:?\s*(\d{2})\/(\d{4})/i);
+  if(m) return m[1]+'/'+m[2];
+  // Try month name + year
+  var meses = {janeiro:'01',fevereiro:'02',marco:'03','março':'03',abril:'04',maio:'05',junho:'06',julho:'07',agosto:'08',setembro:'09',outubro:'10',novembro:'11',dezembro:'12'};
+  m = text.match(/per[ií]odo\s*:?\s*(janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s*(?:de\s*)?(\d{4})/i);
+  if(m) return (meses[m[1].toLowerCase()]||'01')+'/'+m[2];
+  // Try filename-style period in text
+  m = text.match(/(\d{2})[-_](\d{4})/);
+  if(m) return m[1]+'/'+m[2];
+  return '';
+}
+function _extractPeriodFromFilename(filename){
+  if(!filename) return '';
+  var fn = filename.replace(/\.[^.]+$/,''); // remove extension
+  // Try MM-YYYY, MM_YYYY, MM.YYYY patterns
+  var m = fn.match(/(\d{2})[-_.](\d{4})/);
+  if(m) return m[1]+'/'+m[2];
+  // Try YYYY-MM
+  m = fn.match(/(\d{4})[-_.](\d{2})/);
+  if(m) return m[2]+'/'+m[1];
+  // Try month names
+  var meses = {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12',
+    janeiro:'01',fevereiro:'02',marco:'03','março':'03',abril:'04',maio:'05',junho:'06',julho:'07',agosto:'08',setembro:'09',outubro:'10',novembro:'11',dezembro:'12'};
+  for(var k in meses){
+    var re = new RegExp(k+'\\s*[-_./]?\\s*(\\d{4})', 'i');
+    m = fn.match(re);
+    if(m) return meses[k]+'/'+m[1];
+  }
+  return '';
+}
+function parseBancoHorasPDF(text, filename){
   const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
   const out = [];
   let departamento = '';
+  let periodo = _extractPeriodFromBH(text) || _extractPeriodFromFilename(filename);
   for(const l of lines){
     if(/^departamento\s*:/i.test(l)) departamento = l.replace(/^departamento\s*:\s*/i,'').trim();
   }
@@ -1885,7 +1945,7 @@ function parseBancoHorasPDF(text){
     }
     out.push({
       id:uid(), nome: colab?(colab.nome||colab.Nome||nome):nome,
-      horas: bsaldo,
+      horas: bsaldo, periodo: periodo,
       cargo: colab?(colab.cargo||colab.Cargo||''):'',
       lider: colab?(colab.lider||colab['Líder']||colab.Lider||''):'',
       area: colab?(colab.area||colab.departamento||colab.departamentoRaw||''):departamento
@@ -1938,6 +1998,7 @@ const CRUD_PAGES = {
     parser:'parseBancoHorasImport', pageTitle:['Banco de Horas','Gestão de banco de horas — importar, adicionar, editar e remover'],
     cols:[
       {key:'nome',label:'Nome',type:'text'},{key:'horas',label:'Horas',type:'text'},
+      {key:'periodo',label:'Período',type:'text'},
       {key:'cargo',label:'Cargo',type:'text',computed:true},{key:'lider',label:'Líder',type:'text',computed:true}
     ]
   },
@@ -2030,6 +2091,133 @@ function computeCrudFields(pageKey, data){
       r.lider = colab ? (colab.lider||colab['Líder']||colab.Lider||'') : '';
     });
   }
+}
+function _parseHorasToMinutes(h){
+  if(!h) return 0;
+  var s = String(h).trim();
+  var neg = s.startsWith('-'); if(neg) s = s.substring(1);
+  // Handle HH:MM format
+  var m = s.match(/^(\d+):(\d{2})$/);
+  if(m){ var mins = parseInt(m[1],10)*60 + parseInt(m[2],10); return neg? -mins:mins; }
+  // Handle decimal
+  var n = parseFloat(s.replace(',','.'));
+  if(!isNaN(n)) return neg? -(n*60):(n*60);
+  return 0;
+}
+function _minutesToHoras(mins){
+  var neg = mins < 0; if(neg) mins = -mins;
+  var h = Math.floor(mins/60);
+  var m = Math.round(mins%60);
+  return (neg?'-':'+') + h + ':' + String(m).padStart(2,'0');
+}
+function _renderBancoHorasChart(data){
+  // Group by periodo, sum hours
+  var periodos = {};
+  data.forEach(function(r){
+    if(!r.periodo) return;
+    if(!periodos[r.periodo]) periodos[r.periodo] = {total:0, positivos:0, negativos:0, count:0};
+    var mins = _parseHorasToMinutes(r.horas);
+    periodos[r.periodo].total += mins;
+    if(mins > 0) periodos[r.periodo].positivos += mins;
+    else periodos[r.periodo].negativos += mins;
+    periodos[r.periodo].count++;
+  });
+  var keys = Object.keys(periodos);
+  if(keys.length < 1) return '';
+  // Sort periods chronologically (MM/YYYY)
+  keys.sort(function(a,b){
+    var pa = a.split('/'), pb = b.split('/');
+    var ya = parseInt(pa[1]||'0',10), yb = parseInt(pb[1]||'0',10);
+    if(ya !== yb) return ya - yb;
+    return parseInt(pa[0]||'0',10) - parseInt(pb[0]||'0',10);
+  });
+  // KPI cards
+  var latest = periodos[keys[keys.length-1]];
+  var latestTotal = _minutesToHoras(latest.total);
+  var latestPos = latest.positivos > 0 ? periodos[keys[keys.length-1]].count : 0;
+  var colabComBanco = 0;
+  data.forEach(function(r){
+    if(r.periodo === keys[keys.length-1] && _parseHorasToMinutes(r.horas) !== 0) colabComBanco++;
+  });
+  var trend = '';
+  if(keys.length >= 2){
+    var prev = periodos[keys[keys.length-2]].total;
+    var curr = latest.total;
+    if(curr > prev) trend = '<span style="color:#dc2626;">▲ Aumentou</span>';
+    else if(curr < prev) trend = '<span style="color:#00C47D;">▼ Diminuiu</span>';
+    else trend = '<span style="color:#888;">= Estável</span>';
+  }
+  return `
+  <div class="grid grid-2" style="margin-top:24px;">
+    <div class="card">
+      <div class="section-title">Evolução do Banco de Horas — Saldo Total por Mês</div>
+      <canvas id="chartBancoEvo" height="260"></canvas>
+    </div>
+    <div class="card">
+      <div class="section-title">Resumo — ${keys[keys.length-1]}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+        <div style="background:#f0fdf4;padding:16px;border-radius:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#00C47D;">${latestTotal}</div>
+          <div style="font-size:12px;color:#666;margin-top:4px;">Saldo Total</div>
+        </div>
+        <div style="background:#fef3c7;padding:16px;border-radius:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#f59e0b;">${colabComBanco}</div>
+          <div style="font-size:12px;color:#666;margin-top:4px;">Colaboradores com saldo</div>
+        </div>
+        <div style="background:#eff6ff;padding:16px;border-radius:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#3b82f6;">${keys.length}</div>
+          <div style="font-size:12px;color:#666;margin-top:4px;">Períodos importados</div>
+        </div>
+        <div style="background:#fdf2f8;padding:16px;border-radius:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;">${trend||'—'}</div>
+          <div style="font-size:12px;color:#666;margin-top:4px;">Tendência</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function _bindBancoHorasChart(data){
+  var canvas = document.getElementById('chartBancoEvo');
+  if(!canvas) return;
+  var periodos = {};
+  data.forEach(function(r){
+    if(!r.periodo) return;
+    if(!periodos[r.periodo]) periodos[r.periodo] = {total:0, positivos:0, negativos:0};
+    var mins = _parseHorasToMinutes(r.horas);
+    periodos[r.periodo].total += mins;
+    if(mins > 0) periodos[r.periodo].positivos += mins;
+    else periodos[r.periodo].negativos += mins;
+  });
+  var keys = Object.keys(periodos);
+  keys.sort(function(a,b){
+    var pa = a.split('/'), pb = b.split('/');
+    var ya = parseInt(pa[1]||'0',10), yb = parseInt(pb[1]||'0',10);
+    if(ya !== yb) return ya - yb;
+    return parseInt(pa[0]||'0',10) - parseInt(pb[0]||'0',10);
+  });
+  var totalHrs = keys.map(function(k){ return Math.round(periodos[k].total/60*100)/100; });
+  var posHrs = keys.map(function(k){ return Math.round(periodos[k].positivos/60*100)/100; });
+  var negHrs = keys.map(function(k){ return Math.round(periodos[k].negativos/60*100)/100; });
+  if(CHARTS.chartBancoEvo) CHARTS.chartBancoEvo.destroy();
+  CHARTS.chartBancoEvo = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels: keys,
+      datasets:[
+        {label:'Saldo Positivo (h)', data:posHrs, backgroundColor:'rgba(0,196,125,0.7)', borderRadius:6, order:2},
+        {label:'Saldo Negativo (h)', data:negHrs, backgroundColor:'rgba(220,38,38,0.7)', borderRadius:6, order:2},
+        {label:'Saldo Total (h)', data:totalHrs, type:'line', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', fill:false, tension:0.3, pointRadius:5, pointBackgroundColor:'#3b82f6', borderWidth:2, order:1}
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
+      scales:{
+        x:{grid:{display:false}},
+        y:{title:{display:true,text:'Horas'},grid:{color:'#f0f0f0'}}
+      }
+    }
+  });
 }
 function renderCrudPage(pageKey){
   const cfg = CRUD_PAGES[pageKey];
@@ -2174,6 +2362,8 @@ function renderCrudPage(pageKey){
         </tbody>
       </table>
     </div>
+
+    ${pageKey==='bancoHorasImport' ? _renderBancoHorasChart(data) : ''}
 
     <div id="crudEditModal_${pageKey}" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:16px;padding:28px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -2339,8 +2529,13 @@ function bindCrudPage(pageKey){
           const pdfParser = cfg.parser==='parseBancoHorasImport' ? 'parseBancoHorasPDF' : cfg.parser+'PDF';
           const parserFn = window[pdfParser] || window.parseBancoHorasPDF;
           if(!parserFn){ alert('Parser PDF não encontrado para esta base.'); return; }
-          const parsed = parserFn(fullText);
+          const parsed = parserFn(fullText, file.name);
           if(!parsed.length){ alert('Nenhum registro encontrado no PDF. Verifique o formato.'); return; }
+          // If bancoHorasImport and no periodo detected, prompt user
+          if(pageKey==='bancoHorasImport' && parsed.length && !parsed[0].periodo){
+            var periodoInput = prompt('Período não detectado automaticamente.\nInforme o período deste arquivo (ex: 01/2026):');
+            if(periodoInput){ parsed.forEach(function(r){ r.periodo = periodoInput.trim(); }); }
+          }
           mergeAndSave(parsed);
         }catch(err){
           console.error('Erro ao ler PDF:', err);
@@ -2355,7 +2550,12 @@ function bindCrudPage(pageKey){
         const wb = XLSX.read(data, {type:'array', cellDates:true});
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:''});
         const parserFn = window[cfg.parser] || eval(cfg.parser);
-        const parsed = parserFn(rows);
+        const parsed = parserFn(rows, file.name);
+        // If bancoHorasImport and no periodo detected, prompt user
+        if(pageKey==='bancoHorasImport' && parsed.length && !parsed[0].periodo){
+          var periodoInput = prompt('Período não detectado automaticamente.\nInforme o período deste arquivo (ex: 01/2026):');
+          if(periodoInput){ parsed.forEach(function(r){ r.periodo = periodoInput.trim(); }); }
+        }
         mergeAndSave(parsed);
       };
       reader.readAsArrayBuffer(file);
@@ -2448,6 +2648,26 @@ function bindCrudPage(pageKey){
     document.getElementById('crudEditModal_'+pageKey).style.display='none';
     rerender();
   });
+
+  // Banco de Horas evolution chart
+  if(pageKey==='bancoHorasImport'){
+    var bhData = DB[CRUD_PAGES[pageKey].dbKey]||[];
+    var bp = currentBP();
+    if(bp){
+      var bpId = Number(bp.id);
+      var myNames = getMyColabNames();
+      var myAreas = getMyExpandedAreas();
+      bhData = bhData.filter(function(r){
+        if(r.bpId!=null) return Number(r.bpId)===bpId;
+        var n=normalizeStr(r.nome||r.Nome||'');
+        if(n&&myNames&&myNames.has(n)) return true;
+        var a=normalizeStr(r.area||r.departamento||'');
+        if(a&&myAreas&&myAreas.has(a)) return true;
+        return false;
+      });
+    }
+    _bindBancoHorasChart(bhData);
+  }
 }
 
 /* =========================================================
@@ -5481,15 +5701,17 @@ function importSummary(type){
 function renderImportZone(type, title, desc, acceptPDF){
   const accept = acceptPDF ? '.xlsx,.xls,.csv,.pdf' : '.xlsx,.xls';
   const label = acceptPDF ? '(.xlsx, .xls, .pdf)' : '(.xlsx, .xls)';
+  const multi = type==='bancoHorasImport' ? ' multiple' : '';
+  const multiLabel = type==='bancoHorasImport' ? '<br><small style="color:var(--primary);">Pode selecionar vários arquivos de uma vez</small>' : '';
   return `
   <div class="card">
     <div class="section-title">${title}</div>
     <p style="color:var(--text-light);font-size:12.5px;margin-top:-8px;">${desc}</p>
     <label class="import-zone" id="zone_${type}">
       ${ICONS.import}
-      <h4>Arraste o arquivo aqui</h4>
-      <p>ou clique para selecionar ${label}</p>
-      <input type="file" id="file_${type}" accept="${accept}">
+      <h4>Arraste o(s) arquivo(s) aqui</h4>
+      <p>ou clique para selecionar ${label}${multiLabel}</p>
+      <input type="file" id="file_${type}" accept="${accept}"${multi}>
     </label>
     <div class="import-status ${DB[type].length?'ok':''}" id="status_${type}">${DB[type].length? importSummary(type):'Nenhum arquivo importado ainda'}</div>
   </div>`;
@@ -5765,12 +5987,18 @@ function bindImport(){
   ['colaboradores','desligamentos','promocoes','pdis','bancoHorasImport','vagas'].forEach(type=>{
     const zone = document.getElementById('zone_'+type);
     const input = document.getElementById('file_'+type);
-    input.addEventListener('change', function(){ if(this.files[0]) handleImportFile(type, this.files[0]); });
+    input.addEventListener('change', function(){
+      if(type==='bancoHorasImport' && this.files.length > 1){
+        handleImportMultiFiles(type, Array.from(this.files));
+      } else if(this.files[0]) handleImportFile(type, this.files[0]);
+    });
     zone.addEventListener('dragover', e=>{ e.preventDefault(); zone.classList.add('drag'); });
     zone.addEventListener('dragleave', ()=> zone.classList.remove('drag'));
     zone.addEventListener('drop', e=>{
       e.preventDefault(); zone.classList.remove('drag');
-      if(e.dataTransfer.files[0]) handleImportFile(type, e.dataTransfer.files[0]);
+      if(type==='bancoHorasImport' && e.dataTransfer.files.length > 1){
+        handleImportMultiFiles(type, Array.from(e.dataTransfer.files));
+      } else if(e.dataTransfer.files[0]) handleImportFile(type, e.dataTransfer.files[0]);
     });
   });
   const btnClear = document.getElementById('btnClearAllImport');
@@ -5787,7 +6015,7 @@ function _finishImportMerge(type, parsed, statusEl){
     if(type==='desligamentos') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
     if(type==='promocoes') return normalizeStr(r.nome)+'|'+(r.mesRaw||'');
     if(type==='pdis') return normalizeStr(r.nome);
-    if(type==='bancoHorasImport') return normalizeStr(r.nome);
+    if(type==='bancoHorasImport') return normalizeStr(r.nome)+'|'+(r.periodo||'');
     if(type==='vagas') return r.idVaga||'';
     return r.id;
   }
@@ -5843,7 +6071,7 @@ function handleImportFile(type, file){
             fullText += row.parts.map(p=>p.str).join('  ').trim()+'\n';
           });
         }
-        const parsed = parseBancoHorasPDF(fullText);
+        const parsed = parseBancoHorasPDF(fullText, file.name);
         if(!parsed.length){ statusEl.textContent = 'Nenhum registro encontrado no PDF. Verifique o formato.'; statusEl.className='import-status'; return; }
         _finishImportMerge(type, parsed, statusEl);
       }catch(err){
@@ -5861,7 +6089,7 @@ function handleImportFile(type, file){
     if(type==='colaboradores') parsed = parseColaboradores(rows);
     else if(type==='desligamentos') parsed = parseDesligamentos(rows);
     else if(type==='pdis') parsed = parsePDIs(rows);
-    else if(type==='bancoHorasImport') parsed = parseBancoHorasImport(rows);
+    else if(type==='bancoHorasImport') parsed = parseBancoHorasImport(rows, file.name);
     else if(type==='vagas') parsed = parseVagas(rows);
     else parsed = parsePromocoes(rows);
     // Colaboradores: full replace (planilha é a base de verdade)
@@ -5891,6 +6119,70 @@ function handleImportFile(type, file){
         if(skipped > 0) console.log('[Import] '+skipped+' registros descartados (líder não encontrado em nenhuma BP)');
       }
       _finishImportMerge(type, parsed, statusEl);
+    }
+  });
+}
+
+function handleImportMultiFiles(type, files){
+  var statusEl = document.getElementById('status_'+type);
+  statusEl.textContent = 'Processando '+files.length+' arquivos...';
+  var totalParsed = [];
+  var processed = 0;
+  var errors = 0;
+  function _onFileProcessed(parsed, fname){
+    processed++;
+    if(parsed && parsed.length) totalParsed = totalParsed.concat(parsed);
+    else errors++;
+    statusEl.textContent = 'Processando... ('+processed+'/'+files.length+')';
+    if(processed >= files.length){
+      if(!totalParsed.length){
+        statusEl.textContent = 'Nenhum registro encontrado nos '+files.length+' arquivos.';
+        statusEl.className = 'import-status';
+        return;
+      }
+      // Ask for period if none was detected
+      var noPeriod = totalParsed.filter(function(r){ return !r.periodo; });
+      if(noPeriod.length > 0){
+        var p = prompt('Não foi possível detectar o período de alguns registros.\nInforme o período (ex: 01/2026, 03/2026):');
+        if(p) noPeriod.forEach(function(r){ r.periodo = p.trim(); });
+      }
+      _finishImportMerge(type, totalParsed, statusEl);
+      statusEl.textContent = totalParsed.length+' registros de '+files.length+' arquivos — total: '+(DB[type]||[]).length+' registros';
+    }
+  }
+  files.forEach(function(file){
+    if(file.name.toLowerCase().endsWith('.pdf') && window.pdfjsLib){
+      var reader = new FileReader();
+      reader.onload = async function(ev){
+        try {
+          var typedArr = new Uint8Array(ev.target.result);
+          var pdf = await pdfjsLib.getDocument({data:typedArr}).promise;
+          var fullText = '';
+          for(var p=1; p<=pdf.numPages; p++){
+            var page = await pdf.getPage(p);
+            var tc = await page.getTextContent();
+            var items = tc.items.map(function(item){return {str:item.str, x:item.transform[4], y:item.transform[5]};});
+            items.sort(function(a,b){return b.y-a.y || a.x-b.x;});
+            var rows = [];
+            var curRow = null;
+            items.forEach(function(item){
+              if(!curRow || Math.abs(item.y - curRow.y) > 4){ curRow = {y:item.y, parts:[]}; rows.push(curRow); }
+              curRow.parts.push(item);
+            });
+            rows.forEach(function(row){
+              row.parts.sort(function(a,b){return a.x-b.x;});
+              fullText += row.parts.map(function(p){return p.str;}).join('  ').trim()+'\n';
+            });
+          }
+          _onFileProcessed(parseBancoHorasPDF(fullText, file.name), file.name);
+        } catch(err){ console.error('Erro PDF:', err); _onFileProcessed(null, file.name); }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      readWorkbookFile(file, function(err, rows){
+        if(err){ _onFileProcessed(null, file.name); return; }
+        _onFileProcessed(parseBancoHorasImport(rows, file.name), file.name);
+      });
     }
   });
 }
