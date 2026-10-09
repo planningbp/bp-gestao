@@ -2218,8 +2218,7 @@ function _renderBancoHorasChart(data){
     + '<div style="background:#eff6ff;padding:16px;border-radius:12px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#3b82f6;">'+keys.length+'</div><div style="font-size:12px;color:#666;margin-top:4px;">Períodos importados</div></div>'
     + '<div style="background:#fdf2f8;padding:16px;border-radius:12px;text-align:center;"><div style="font-size:22px;font-weight:700;">'+(trend||'—')+'</div><div style="font-size:12px;color:#666;margin-top:4px;">Tendência</div></div>'
     + '</div></div></div>'
-    + gestorTable
-    + '<div class="card" style="margin-top:16px;"><div class="section-title">Comparativo por Gestor — Gráfico</div><canvas id="chartBancoGestor" height="300"></canvas></div>';
+    + gestorTable;
 }
 function _bindBancoHorasChart(data){
   // === Evolution chart ===
@@ -2249,40 +2248,6 @@ function _bindBancoHorasChart(data){
         {label:'Saldo Total (h)', data:totalHrs, type:'line', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)', fill:false, tension:0.3, pointRadius:5, pointBackgroundColor:'#3b82f6', borderWidth:2, order:1}
       ]
     },
-    options:{
-      responsive:true,
-      plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
-      scales:{
-        x:{grid:{display:false}},
-        y:{title:{display:true,text:'Horas'},grid:{color:'#f0f0f0'}}
-      }
-    }
-  });
-  // === Per-gestor chart ===
-  var canvasG = document.getElementById('chartBancoGestor');
-  if(!canvasG || keys.length < 2) return;
-  var gestores = {};
-  data.forEach(function(r){
-    if(!r.periodo || !r.lider) return;
-    var g = r.lider;
-    if(!gestores[g]) gestores[g] = {};
-    if(!gestores[g][r.periodo]) gestores[g][r.periodo] = 0;
-    gestores[g][r.periodo] += _parseHorasToMinutes(r.horas);
-  });
-  var gNames = Object.keys(gestores).sort();
-  var colors = ['#3b82f6','#00C47D','#f59e0b','#dc2626','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48'];
-  var datasets = gNames.map(function(g, i){
-    return {
-      label: g,
-      data: keys.map(function(p){ return Math.round((gestores[g][p]||0)/60*100)/100; }),
-      backgroundColor: colors[i % colors.length],
-      borderRadius: 4
-    };
-  });
-  if(CHARTS.chartBancoGestor) CHARTS.chartBancoGestor.destroy();
-  CHARTS.chartBancoGestor = new Chart(canvasG, {
-    type:'bar',
-    data:{ labels: keys, datasets: datasets },
     options:{
       responsive:true,
       plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
@@ -2386,7 +2351,7 @@ function renderCrudPage(pageKey){
     </div>
 
     ${pageKey==='bancoHorasImport' ? _renderBancoHorasNoPeriodWarning(data) : ''}
-    ${pageKey==='bancoHorasImport' ? _renderBancoHorasChart(data) : ''}
+    ${pageKey==='bancoHorasImport' ? _renderBancoHorasChart(filtered) : ''}
 
     <div class="card" style="overflow-x:auto;padding:0;">
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -2740,20 +2705,19 @@ function bindCrudPage(pageKey){
   }
   // Banco de Horas evolution chart
   if(pageKey==='bancoHorasImport'){
-    var bhData = DB[CRUD_PAGES[pageKey].dbKey]||[];
-    var bp = currentBP();
-    if(bp){
-      var bpId = Number(bp.id);
-      var myNames = getMyColabNames();
-      var myAreas = getMyExpandedAreas();
-      bhData = bhData.filter(function(r){
-        if(r.bpId!=null) return Number(r.bpId)===bpId;
-        var n=normalizeStr(r.nome||r.Nome||'');
-        if(n&&myNames&&myNames.has(n)) return true;
-        var a=normalizeStr(r.area||r.departamento||'');
-        if(a&&myAreas&&myAreas.has(a)) return true;
-        return false;
-      });
+    // Use BP-filtered + column-filtered data for chart (same as rendered HTML)
+    var bhData = _crudBPFiltered();
+    // Apply column filters
+    var bhFilters = (UI.crudFilters && UI.crudFilters[pageKey]) || {};
+    Object.keys(bhFilters).forEach(function(ck){
+      var fv = bhFilters[ck];
+      if(fv) bhData = bhData.filter(function(r){ return normalizeStr((r[ck]||'').toString()).includes(normalizeStr(fv)); });
+    });
+    // Apply search filter
+    var bhSearch = (UI['crudSearch_'+pageKey]||'').toLowerCase();
+    if(bhSearch){
+      var bhCfg = CRUD_PAGES[pageKey];
+      bhData = bhData.filter(function(r){ return bhCfg.cols.some(function(c){ return ((r[c.key]||'').toString().toLowerCase()).includes(bhSearch); }); });
     }
     _bindBancoHorasChart(bhData);
   }
@@ -8693,6 +8657,51 @@ function renderLideresPage(){
         html += '</div>';
       }
 
+      // Banco de Horas por período para este líder
+      var liderBH = (DB.bancoHorasImport||[]).filter(function(r){
+        return r.periodo && normalizeStr(r.lider||'')=== nk;
+      });
+      if(liderBH.length){
+        var bhPeriodos = {};
+        liderBH.forEach(function(r){
+          if(!bhPeriodos[r.periodo]) bhPeriodos[r.periodo] = {total:0, pos:0, neg:0, count:0};
+          var mins = _parseHorasToMinutes(r.horas);
+          bhPeriodos[r.periodo].total += mins;
+          if(mins > 0) bhPeriodos[r.periodo].pos += mins;
+          else bhPeriodos[r.periodo].neg += mins;
+          bhPeriodos[r.periodo].count++;
+        });
+        var bhKeys = _sortPeriods(Object.keys(bhPeriodos));
+        html += '<div style="font-weight:700;font-size:13px;margin-bottom:8px;margin-top:16px;">Banco de Horas ('+liderBH.length+' registros)</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:12px;">';
+        bhKeys.forEach(function(p, pi){
+          var tot = bhPeriodos[p].total;
+          var h = _minutesToHoras(tot);
+          var color = tot > 0 ? '#dc2626' : tot < 0 ? '#00C47D' : '#888';
+          var diff = '';
+          if(pi > 0){
+            var prevTot = bhPeriodos[bhKeys[pi-1]].total;
+            var d = tot - prevTot;
+            if(d !== 0){
+              var arrow = d > 0 ? '▲' : '▼';
+              var dc = d > 0 ? '#dc2626' : '#00C47D';
+              diff = '<div style="font-size:10px;color:'+dc+';font-weight:600;margin-top:2px;">'+arrow+' '+_minutesToHoras(d)+' vs anterior</div>';
+            }
+          }
+          html += '<div style="background:#f9fafb;border-radius:10px;padding:12px;text-align:center;border-left:3px solid '+color+';">'
+            + '<div style="font-size:11px;color:#888;font-weight:600;">'+p+'</div>'
+            + '<div style="font-size:18px;font-weight:800;color:'+color+';">'+h+'</div>'
+            + '<div style="font-size:10px;color:#888;">'+bhPeriodos[p].count+' colab.</div>'
+            + diff
+            + '</div>';
+        });
+        html += '</div>';
+        // Mini chart canvas
+        if(bhKeys.length >= 2){
+          html += '<canvas id="chartBHLider_'+nk.replace(/[^a-z0-9]/g,'')+'" height="120" style="margin-bottom:16px;"></canvas>';
+        }
+      }
+
       // Relatórios 1:1
       const liderReports = DB.relatorios1on1.filter(r=>normalizeStr(r.lider)===normalizeStr(liderNome));
       liderReports.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
@@ -8900,6 +8909,38 @@ function bindLideresPage(){
       options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},
         datalabels:false,tooltip:{backgroundColor:'rgba(0,0,0,0.8)',padding:10,cornerRadius:8,titleFont:{size:12},bodyFont:{size:13}}},
         scales:{y:{min:_yMin,max:_yMax,ticks:{stepSize:20,font:{size:11}},grid:{color:'#e5e5e5'}},x:{grid:{display:false},ticks:{font:{size:11}}}}}
+    });
+  });
+
+  // Banco de Horas mini charts per leader
+  document.querySelectorAll('[id^="chartBHLider_"]').forEach(function(canvas){
+    var liderKey = canvas.id.replace('chartBHLider_','');
+    var liderBH = (DB.bancoHorasImport||[]).filter(function(r){
+      return r.periodo && normalizeStr(r.lider||'').replace(/[^a-z0-9]/g,'') === liderKey;
+    });
+    if(!liderBH.length) return;
+    var pMap = {};
+    liderBH.forEach(function(r){
+      if(!pMap[r.periodo]) pMap[r.periodo] = 0;
+      pMap[r.periodo] += _parseHorasToMinutes(r.horas);
+    });
+    var pKeys = _sortPeriods(Object.keys(pMap));
+    var vals = pKeys.map(function(k){ return Math.round(pMap[k]/60*100)/100; });
+    new Chart(canvas, {
+      type:'bar',
+      data:{
+        labels: pKeys,
+        datasets:[{
+          label:'Saldo (h)', data:vals,
+          backgroundColor: vals.map(function(v){ return v >= 0 ? 'rgba(220,38,38,0.7)' : 'rgba(0,196,125,0.7)'; }),
+          borderRadius:6
+        }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{grid:{display:false}}, y:{title:{display:true,text:'Horas'},grid:{color:'#f0f0f0'}}}
+      }
     });
   });
 }
