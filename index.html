@@ -2941,7 +2941,8 @@ function isLiderSession(){ return SESSION && SESSION.type==='lider'; }
 function isBPSession(){ return SESSION && !SESSION.type; }
 
 function computeAutoData(area, period, lider, customStart, customEnd){
-  if(!area || !period) return null;
+  if(!period) return null;
+  if(!lider && !area) return null;
   let start, end;
   function parseBRDate(s){ const p=s.split('/'); return p.length===3?new Date(Number(p[2]),Number(p[1])-1,Number(p[0])):null; }
   if(customStart && customEnd && customStart.includes('/') && customEnd.includes('/')){
@@ -2954,15 +2955,12 @@ function computeAutoData(area, period, lider, customStart, customEnd){
     start = pb.start; end = pb.end;
   }
   const inRange = (d) => d && d>=start && d<=end;
-  // If leader is Head or no leader selected → full area; otherwise use full team tree (gerente sees leaders + their subordinates)
-  const fullArea = !lider || isHead(lider);
   const areaN = normalizeStr(area);
   const liderN = normalizeStr(lider);
-  // Build the set of names in the gerente's full tree (includes sub-leaders and their teams)
+  // SEMPRE usar árvore do líder quando líder está selecionado (diretos + indiretos)
   let _treeNames = null;
-  if(!fullArea){
+  if(lider){
     _treeNames = new Set([liderN]);
-    // Resolve aliases for the gerente name
     const _aliases = _resolveLiderAliases(lider);
     _aliases.forEach(alias=>{
       _treeNames.add(alias);
@@ -2971,20 +2969,22 @@ function computeAutoData(area, period, lider, customStart, customEnd){
     getTeamTree(lider).forEach(c=> _treeNames.add(normalizeStr(c.nome||c.Nome||'')));
   }
   const colabs = DB.colaboradores.filter(c=>{
-    if(normalizeStr(c.area||c.departamento||'')!==areaN) return false;
-    if(!fullArea) return _treeNames.has(normalizeStr(c.nome||c.Nome||''));
+    // Quando líder selecionado: filtrar SOMENTE pela árvore do líder, NÃO por área
+    if(_treeNames) return _treeNames.has(normalizeStr(c.nome||c.Nome||''));
+    // Sem líder: filtrar por área
+    if(areaN && normalizeStr(c.area||c.departamento||'')!==areaN) return false;
     return true;
   });
   const colabNames = new Set(colabs.map(c=>normalizeStr(c.nome)));
   const desligsAll = DB.desligamentos.filter(d=>{
-    if(normalizeStr(d.area||'')!==areaN) return false;
-    if(!fullArea) return colabNames.has(normalizeStr(d.nome)) || _treeNames.has(normalizeStr(d.nome||''));
+    if(_treeNames) return colabNames.has(normalizeStr(d.nome)) || _treeNames.has(normalizeStr(d.nome||''));
+    if(areaN && normalizeStr(d.area||'')!==areaN) return false;
     return true;
   });
   const desligsPeriod = desligsAll.filter(d=> d.mesDate && inRange(d.mesDate));
   const promosPeriod = DB.promocoes.filter(p=>{
-    if(normalizeStr(p.area||'')!==areaN) return false;
-    if(!fullArea) return colabNames.has(normalizeStr(p.nome)) || _treeNames.has(normalizeStr(p.nome||''));
+    if(_treeNames) return colabNames.has(normalizeStr(p.nome)) || _treeNames.has(normalizeStr(p.nome||''));
+    if(areaN && normalizeStr(p.area||'')!==areaN) return false;
     return true;
   }).filter(p=> p.mesDate && inRange(p.mesDate) && isPromoSalarial(p));
 
@@ -6471,10 +6471,9 @@ function applyAutoCalc(){
     return {nome:p.nome, gestor:p.gestor||'', aprovador:p.aprovador||'', cargoAnterior:cargoAnt, salarioAnterior:salAntFmt, cargoNovo:p.cargoAprovado||'', salarioNovo:salNovoFmt, reajuste:reajFmt, pct: pctVal!=null&&pctVal!==''?fmtPct(pctVal*100):'—'};
   });
   // eNPS/lNPS already set by applyEnpsAutoCalc() with exact dept/leader scores from DB.enps
-  // Helper: filter records by gerente's team — uses full tree (sub-leaders + their teams)
-  const _fullArea = !fd.gerente || isHead(fd.gerente);
+  // Helper: filter records by gerente's team — SEMPRE usa árvore do líder
   let _teamNames = null;
-  if(!_fullArea){
+  if(fd.gerente){
     _teamNames = new Set([normalizeStr(fd.gerente)]);
     const _aliases = _resolveLiderAliases(fd.gerente);
     _aliases.forEach(alias=>{
@@ -6483,10 +6482,10 @@ function applyAutoCalc(){
     });
     getTeamTree(fd.gerente).forEach(c=> _teamNames.add(normalizeStr(c.nome||c.Nome||'')));
   }
-  function isInTeam(nome){ return _fullArea || (_teamNames && _teamNames.has(normalizeStr(nome))); }
+  function isInTeam(nome){ return _teamNames ? _teamNames.has(normalizeStr(nome)) : true; }
   // Auto-populate banco de horas from imported data
   if(DB.bancoHorasImport.length){
-    const areaBH = DB.bancoHorasImport.filter(b=> normalizeStr(b.area)===normalizeStr(fd.area) && isInTeam(b.nome));
+    const areaBH = DB.bancoHorasImport.filter(b=> isInTeam(b.nome));
     if(areaBH.length) fd.bancoHorasTable = areaBH.map(b=>({nome:b.nome, cargo:b.cargo||'', lider:b.lider||'', horas:b.horas||'', observacao:b.observacao||''}));
   }
   fd.autoApplied = true;
