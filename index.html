@@ -1000,6 +1000,12 @@ var _ghReceiving = false;
 
 // === STARTUP DEDUP: clean localStorage duplicates immediately ===
 (function _startupDedup(){
+  // Remove bancoHorasImport records without periodo (legacy data)
+  if(Array.isArray(DB.bancoHorasImport)){
+    var bhBefore = DB.bancoHorasImport.length;
+    DB.bancoHorasImport = DB.bancoHorasImport.filter(function(r){ return !!r.periodo; });
+    if(DB.bancoHorasImport.length < bhBefore) console.log('[Startup] Removed '+(bhBefore-DB.bancoHorasImport.length)+' bancoHoras without periodo');
+  }
   var keys = ['colaboradores','desligamentos','promocoes','bancoHorasImport','vagas'];
   keys.forEach(function(key){
     var arr = DB[key];
@@ -1164,6 +1170,12 @@ async function ghWrite(key, value){
         if(k && !seen.has(k)){ seen.add(k); merged.push(r); }
       });
       toWrite = merged;
+    }
+    // Strip bancoHorasImport records without periodo (legacy cleanup)
+    if(key==='bancoHorasImport' && Array.isArray(toWrite)){
+      var bBefore = toWrite.length;
+      toWrite = toWrite.filter(function(r){ return !!r.periodo; });
+      if(toWrite.length < bBefore) console.log('[GH] Removed '+(bBefore-toWrite.length)+' bancoHoras records without periodo');
     }
     // Final dedup before writing (prevent pushing duplicates to GitHub)
     if(Array.isArray(toWrite)){
