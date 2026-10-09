@@ -2110,6 +2110,17 @@ function _minutesToHoras(mins){
   var m = Math.round(mins%60);
   return (neg?'-':'+') + h + ':' + String(m).padStart(2,'0');
 }
+function _renderBancoHorasNoPeriodWarning(data){
+  var noPeriod = data.filter(function(r){ return !r.periodo; });
+  if(noPeriod.length === 0) return '';
+  return '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:16px;margin-top:16px;display:flex;align-items:center;gap:12px;">'
+    + '<span style="font-size:22px;">⚠️</span>'
+    + '<div style="flex:1;"><strong>'+noPeriod.length+' registros sem período.</strong> '
+    + 'Esses registros foram importados antes da funcionalidade de período. '
+    + 'Para corrigir, apague-os e re-importe os arquivos. O sistema agora pedirá o período automaticamente.</div>'
+    + '<button id="btnCleanNoPeriod" style="background:#f59e0b;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;font-weight:600;">Apagar sem período</button>'
+    + '</div>';
+}
 function _renderBancoHorasChart(data){
   // Group by periodo, sum hours
   var periodos = {};
@@ -2363,6 +2374,7 @@ function renderCrudPage(pageKey){
       </table>
     </div>
 
+    ${pageKey==='bancoHorasImport' ? _renderBancoHorasNoPeriodWarning(data) : ''}
     ${pageKey==='bancoHorasImport' ? _renderBancoHorasChart(data) : ''}
 
     <div id="crudEditModal_${pageKey}" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
@@ -2649,6 +2661,18 @@ function bindCrudPage(pageKey){
     rerender();
   });
 
+  // Banco de Horas: clean no-period records button
+  if(pageKey==='bancoHorasImport'){
+    var btnClean = document.getElementById('btnCleanNoPeriod');
+    if(btnClean) btnClean.addEventListener('click', function(){
+      var count = DB.bancoHorasImport.filter(function(r){ return !r.periodo; }).length;
+      if(confirm('Apagar '+count+' registros sem período?\nVocê poderá re-importar os arquivos e o sistema pedirá o período.')){
+        DB.bancoHorasImport = DB.bancoHorasImport.filter(function(r){ return !!r.periodo; });
+        persist('bancoHorasImport');
+        rerender();
+      }
+    });
+  }
   // Banco de Horas evolution chart
   if(pageKey==='bancoHorasImport'){
     var bhData = DB[CRUD_PAGES[pageKey].dbKey]||[];
@@ -6073,6 +6097,10 @@ function handleImportFile(type, file){
         }
         const parsed = parseBancoHorasPDF(fullText, file.name);
         if(!parsed.length){ statusEl.textContent = 'Nenhum registro encontrado no PDF. Verifique o formato.'; statusEl.className='import-status'; return; }
+        if(parsed.length && !parsed[0].periodo){
+          var pInput = prompt('Período não detectado no PDF.\nInforme o período (ex: 01/2026):');
+          if(pInput) parsed.forEach(function(r){ r.periodo = pInput.trim(); });
+        }
         _finishImportMerge(type, parsed, statusEl);
       }catch(err){
         console.error('Erro ao ler PDF:', err);
@@ -6089,7 +6117,13 @@ function handleImportFile(type, file){
     if(type==='colaboradores') parsed = parseColaboradores(rows);
     else if(type==='desligamentos') parsed = parseDesligamentos(rows);
     else if(type==='pdis') parsed = parsePDIs(rows);
-    else if(type==='bancoHorasImport') parsed = parseBancoHorasImport(rows, file.name);
+    else if(type==='bancoHorasImport'){
+      parsed = parseBancoHorasImport(rows, file.name);
+      if(parsed.length && !parsed[0].periodo){
+        var pInput = prompt('Período não detectado no arquivo.\nInforme o período (ex: 01/2026):');
+        if(pInput) parsed.forEach(function(r){ r.periodo = pInput.trim(); });
+      }
+    }
     else if(type==='vagas') parsed = parseVagas(rows);
     else parsed = parsePromocoes(rows);
     // Colaboradores: full replace (planilha é a base de verdade)
