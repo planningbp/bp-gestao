@@ -2010,7 +2010,7 @@ const CRUD_PAGES = {
     parser:'parseBancoHorasImport', pageTitle:['Banco de Horas','Gestão de banco de horas — importar, adicionar, editar e remover'],
     cols:[
       {key:'nome',label:'Nome',type:'text'},{key:'horas',label:'Horas',type:'text'},
-      {key:'periodo',label:'Período',type:'text'},
+      {key:'periodo',label:'Período',type:'text'},{key:'area',label:'Área',type:'text',computed:true},
       {key:'cargo',label:'Cargo',type:'text',computed:true},{key:'lider',label:'Líder',type:'text',computed:true}
     ]
   },
@@ -2101,6 +2101,17 @@ function computeCrudFields(pageKey, data){
       const nome = normalizeStr(r.nome||'');
       const colab = DB.colaboradores.find(c=>normalizeStr(c.nome||c.Nome||'')===nome);
       r.lider = colab ? (colab.lider||colab['Líder']||colab.Lider||'') : '';
+    });
+  }
+  if(pageKey==='bancoHorasImport'){
+    data.forEach(function(r){
+      var nome = normalizeStr(r.nome||r.Nome||'');
+      var colab = DB.colaboradores.find(function(c){ return normalizeStr(c.nome||c.Nome||'')===nome; });
+      if(colab){
+        r.cargo = colab.cargo||colab.Cargo||'';
+        r.lider = colab.lider||colab['Líder']||colab.Lider||'';
+        r.area = colab.area||colab.departamento||colab.departamentoRaw||'';
+      }
     });
   }
 }
