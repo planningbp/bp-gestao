@@ -1282,6 +1282,10 @@ async function ghPoll(){
       var merged = _ghMergeArrays(DB[key], data, kf);
       DB[key] = merged;
       if(GH_DATE_FIELDS[key]) revive(DB[key], GH_DATE_FIELDS[key]);
+      // Strip bancoHorasImport without periodo
+      if(key==='bancoHorasImport'){
+        DB[key] = DB[key].filter(function(r){ return !!r.periodo; });
+      }
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       if(key==='colaboradores'){
@@ -1350,6 +1354,12 @@ async function ghInitialLoad(){
         return true;
       });
       if(DB[key].length < beforeDedup) console.log('[GH] Dedup '+key+': '+beforeDedup+' -> '+DB[key].length);
+      // Strip bancoHorasImport without periodo
+      if(key==='bancoHorasImport'){
+        var bhB = DB[key].length;
+        DB[key] = DB[key].filter(function(r){ return !!r.periodo; });
+        if(DB[key].length < bhB) console.log('[GH] Removed '+(bhB-DB[key].length)+' bancoHoras without periodo (merge)');
+      }
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       // If merged result is larger than remote, push local-only records to GitHub
