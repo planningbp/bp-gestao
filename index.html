@@ -2450,7 +2450,9 @@ function bindCrudPage(pageKey){
 
     function mergeAndSave(parsed){
       const existing = DB[cfg.dbKey]||[];
-      const keyFn = r => normalizeStr(r.nome||'')+'|'+(r.mesRaw||r.data||'');
+      const keyFn = pageKey==='bancoHorasImport'
+        ? (r => normalizeStr(r.nome||'')+'|'+(r.periodo||''))
+        : (r => normalizeStr(r.nome||'')+'|'+(r.mesRaw||r.data||''));
       // Build lookup: name → bpId (from colaboradores bpResponsavel)
       // Maps both colaborador names AND their lider names to the BP
       const _nameBpMap = {};
