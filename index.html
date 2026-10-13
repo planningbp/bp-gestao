@@ -9203,35 +9203,45 @@ function getMyColaboradores(){
   if(_myColabsCache) return _myColabsCache;
   const bp = currentBP();
 
-  // PRIMARY: use bpResponsavel field if available
+  // PRIMARY: use bpResponsavel field + merge heads tree for colabs without bpResponsavel
   const byField = _getBPColabsByField(bp);
   if(byField.length > 0){
-    // If BP also has static areas, merge bpResponsavel results with area-based colabs
-    // This ensures colabs without bpResponsavel field but in the BP's areas are included
+    const allNames = new Set(byField.map(c=>normalizeStr(c.nome||c.Nome||'')));
+    // Merge: colabs sem bpResponsavel cujo líder está na árvore dos heads do BP
+    if(bp.heads && bp.heads.length){
+      const headTreeNames = new Set();
+      bp.heads.forEach(h=>{
+        const resolvedNames = _resolveHeadName(h);
+        resolvedNames.forEach(fullName=>{
+          headTreeNames.add(normalizeStr(fullName));
+          getTeamTree(fullName).forEach(c=> headTreeNames.add(normalizeStr(c.nome||c.Nome||'')));
+          const aliases = _resolveLiderAliases(fullName);
+          aliases.forEach(alias=>{
+            headTreeNames.add(alias);
+            getTeamTree(alias).forEach(c=> headTreeNames.add(normalizeStr(c.nome||c.Nome||'')));
+          });
+        });
+      });
+      // Incluir quem não tem bpResponsavel mas está na árvore dos heads
+      DB.colaboradores.forEach(c=>{
+        if(c.bpResponsavel) return; // já tratado pelo byField
+        const cn = normalizeStr(c.nome||c.Nome||'');
+        if(cn && headTreeNames.has(cn)) allNames.add(cn);
+      });
+    }
+    // Merge: colabs sem bpResponsavel em áreas estáticas do BP
     if(bp.areas && bp.areas.length){
-      const allNames = new Set(byField.map(c=>normalizeStr(c.nome||c.Nome||'')));
       const bpAreas = bp.areas.map(a=>normalizeStr(a));
       DB.colaboradores.forEach(c=>{
+        if(c.bpResponsavel) return;
         const cArea = normalizeStr(c.area||c.departamento||'');
-        if(cArea && bpAreas.includes(cArea)){
-          allNames.add(normalizeStr(c.nome||c.Nome||''));
-        }
+        if(cArea && bpAreas.includes(cArea)) allNames.add(normalizeStr(c.nome||c.Nome||''));
       });
-      _myColabsCache = DB.colaboradores.filter(c=> allNames.has(normalizeStr(c.nome||c.Nome||'')));
-      _myColabNamesCache = allNames;
-      const expandedAreas = new Set(bpAreas);
-      _myColabsCache.forEach(c=>{
-        const a = normalizeStr(c.area||c.departamento||'');
-        if(a) expandedAreas.add(a);
-      });
-      _myExpandedAreasCache = expandedAreas;
-      return _myColabsCache;
     }
-    _myColabsCache = byField;
-    const allNames = new Set(byField.map(c=>normalizeStr(c.nome||c.Nome||'')));
+    _myColabsCache = DB.colaboradores.filter(c=> allNames.has(normalizeStr(c.nome||c.Nome||'')));
     _myColabNamesCache = allNames;
-    const expandedAreas = new Set();
-    byField.forEach(c=>{
+    const expandedAreas = new Set(bp.areas ? bp.areas.map(a=>normalizeStr(a)) : []);
+    _myColabsCache.forEach(c=>{
       const a = normalizeStr(c.area||c.departamento||'');
       if(a) expandedAreas.add(a);
     });
