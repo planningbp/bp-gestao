@@ -7641,19 +7641,14 @@ function renderAcompanhamentos(){
     });
   }
 
-  // By default hide done; show pending within window OR overdue (atrasados sempre visíveis)
+  // By default hide done; show only pending within ±10 days window or all if toggle
   // When month is selected, always show done records to validate completion
   const WINDOW = 10;
   const showAll = UI.acompShowAll || !!fMonth;
   const effectiveShowDone = showDone || !!fMonth;
   const pending = filtered.filter(r => {
     if(r.done && !effectiveShowDone) return false;
-    if(!showAll && !r.done){
-      // Atrasados (diffDays < 0) sempre aparecem — precisam de atenção
-      if(r.diffDays < 0) return true;
-      // Futuros: só mostrar dentro da janela
-      if(r.diffDays > WINDOW) return false;
-    }
+    if(!showAll && !effectiveShowDone && Math.abs(r.diffDays) > WINDOW && !r.done) return false;
     return true;
   });
 
