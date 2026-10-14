@@ -998,6 +998,25 @@ let DB = {
 const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1','vagas'];
 var _ghReceiving = false;
 
+/* ---- DELETED IDS TRACKING (impede re-sync de registros deletados) ---- */
+const _DELETED_IDS_KEY = 'planning_deleted_ids';
+function _getDeletedIds(){
+  try { return JSON.parse(localStorage.getItem(_DELETED_IDS_KEY)||'{}'); } catch(e){ return {}; }
+}
+function _trackDeletedIds(dbKey, ids){
+  var d = _getDeletedIds();
+  if(!d[dbKey]) d[dbKey] = [];
+  ids.forEach(function(id){ if(id && !d[dbKey].includes(id)) d[dbKey].push(id); });
+  if(d[dbKey].length > 2000) d[dbKey] = d[dbKey].slice(-2000);
+  localStorage.setItem(_DELETED_IDS_KEY, JSON.stringify(d));
+}
+function _filterDeletedIds(dbKey, arr){
+  var d = _getDeletedIds();
+  if(!d[dbKey] || !d[dbKey].length) return arr;
+  var deleted = new Set(d[dbKey]);
+  return arr.filter(function(r){ return !r.id || !deleted.has(r.id); });
+}
+
 // === STARTUP DEDUP: clean localStorage duplicates immediately ===
 (function _startupDedup(){
   // Remove bancoHorasImport records without periodo (legacy data)
@@ -1039,6 +1058,17 @@ var _ghReceiving = false;
     if(DB[key].length < before){
       console.log('[DEDUP] Startup: '+key+' '+before+' -> '+DB[key].length);
       saveJSON(LS[key], DB[key]);
+    }
+  });
+  // Strip deleted IDs from all DB arrays at startup
+  GH_SYNC_KEYS.forEach(function(key){
+    if(Array.isArray(DB[key])){
+      var dBefore = DB[key].length;
+      DB[key] = _filterDeletedIds(key, DB[key]);
+      if(DB[key].length < dBefore){
+        console.log('[Startup] Removed '+(dBefore-DB[key].length)+' deleted '+key+' records');
+        saveJSON(LS[key], DB[key]);
+      }
     }
   });
 })();
@@ -1177,6 +1207,12 @@ async function ghWrite(key, value){
       toWrite = toWrite.filter(function(r){ return !!r.periodo; });
       if(toWrite.length < bBefore) console.log('[GH] Removed '+(bBefore-toWrite.length)+' bancoHoras records without periodo');
     }
+    // Strip deleted IDs before writing
+    if(Array.isArray(toWrite)){
+      var delBefore = toWrite.length;
+      toWrite = _filterDeletedIds(key, toWrite);
+      if(toWrite.length < delBefore) console.log('[GH] Removed '+(delBefore-toWrite.length)+' deleted '+key+' records (ghWrite)');
+    }
     // Final dedup before writing (prevent pushing duplicates to GitHub)
     if(Array.isArray(toWrite)){
       var wSeen = new Set();
@@ -1286,6 +1322,8 @@ async function ghPoll(){
       if(key==='bancoHorasImport'){
         DB[key] = DB[key].filter(function(r){ return !!r.periodo; });
       }
+      // Strip deleted IDs (meetings, etc.)
+      DB[key] = _filterDeletedIds(key, DB[key]);
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       if(key==='colaboradores'){
@@ -1360,6 +1398,10 @@ async function ghInitialLoad(){
         DB[key] = DB[key].filter(function(r){ return !!r.periodo; });
         if(DB[key].length < bhB) console.log('[GH] Removed '+(bhB-DB[key].length)+' bancoHoras without periodo (merge)');
       }
+      // Strip deleted IDs (meetings, etc.)
+      var preDelLen = DB[key].length;
+      DB[key] = _filterDeletedIds(key, DB[key]);
+      if(DB[key].length < preDelLen) console.log('[GH] Removed '+(preDelLen-DB[key].length)+' deleted '+key+' records (initialLoad)');
       saveJSON(LS[key], DB[key]);
       _ghReceiving = false;
       // If merged result is larger than remote, push local-only records to GitHub
@@ -5728,6 +5770,8 @@ function bindMeetingsList(){
     const bp = currentBP();
     const count = DB.meetings.filter(m=>Number(m.bpId)===Number(bp.id)).length;
     if(count && confirm('Excluir TODAS as '+count+' reuniões de '+bp.name+'? Esta ação não pode ser desfeita.')){
+      var deletedIds = DB.meetings.filter(m=>Number(m.bpId)===Number(bp.id)).map(m=>m.id).filter(Boolean);
+      _trackDeletedIds('meetings', deletedIds);
       DB.meetings = DB.meetings.filter(m=>Number(m.bpId)!==Number(bp.id));
       persist('meetings');
       renderPageContent();
@@ -5740,6 +5784,7 @@ function bindMeetingsList(){
     const id = b.getAttribute('data-delete');
     const m = DB.meetings.find(x=>x.id===id);
     if(m && confirm('Excluir reunião de '+m.area+' ('+m.period+')?')){
+      _trackDeletedIds('meetings', [id]);
       DB.meetings = DB.meetings.filter(x=>x.id!==id);
       persist('meetings');
       renderPageContent();
