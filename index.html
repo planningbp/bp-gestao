@@ -4671,6 +4671,7 @@ function renderPageContent(){
   else if(UI.page==='cronograma'){ c.innerHTML = renderCronogramaPage(); bindCronogramaPage(); }
   else if(UI.page==='pdis'){ c.innerHTML = renderPDIsPage(); bindPDIsPage(); }
   else if(UI.page==='vagas'){ c.innerHTML = renderVagasPage(); bindVagasPage(); }
+  else if(UI.page==='oneOnOnes'){ c.innerHTML = renderOneOnOnes(); bindOneOnOnes(); }
   else if(CRUD_PAGES[UI.page]){ c.innerHTML = renderCrudPage(UI.page); bindCrudPage(UI.page); }
 }
 
@@ -7858,75 +7859,8 @@ function renderAcompanhamentos(){
       }).join('')}
     </div>
 
-    <!-- 1:1 Section -->
-    <div style="margin-top:40px;border-top:2px solid #e5e7eb;padding-top:28px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-        <div>
-          <h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:10px;">
-            ${ICONS.meetings} Registros de 1:1
-          </h2>
-          <p style="margin:4px 0 0;color:#888;font-size:13px;">Registre conversas individuais com colaboradores.</p>
-        </div>
-        <button class="btn btn-primary" id="btnNew1on1" style="width:auto;">${ICONS.plus} Novo 1:1</button>
-      </div>
-
-      <div id="form1on1" style="display:none;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:20px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-          <div class="field"><label>Colaborador</label>
-            <select id="oo_nome" class="select">
-              <option value="">Selecione...</option>
-              ${(()=>{
-                const colabs = getMyColaboradores();
-                return colabs.map(c=>{
-                  const nome = c.nome || c.Nome || '';
-                  return '<option value="'+esc(nome)+'">'+esc(nome)+'</option>';
-                }).join('');
-              })()}
-            </select>
-          </div>
-          <div class="field"><label>Data</label><input type="date" id="oo_data" value="${new Date().toISOString().slice(0,10)}"></div>
-        </div>
-        <div class="field"><label>Título</label><input type="text" id="oo_titulo" placeholder="Ex: Alinhamento de metas Q3"></div>
-        <div class="field"><label>Resumo da conversa</label><textarea id="oo_resumo" rows="4" placeholder="Principais pontos discutidos..."></textarea></div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;">
-          <button class="btn btn-outline" id="btnCancel1on1">Cancelar</button>
-          <button class="btn btn-primary" id="btnSave1on1" style="width:auto;">Salvar</button>
-        </div>
-      </div>
-
-      ${(()=>{
-        const myNames = getMyColabNames();
-        const myOnes = DB.oneOnOnes.filter(o=>{
-          return myNames.has(normalizeStr(o.nome));
-        });
-        myOnes.sort((a,b)=> (b.data||'').localeCompare(a.data||''));
-        if(myOnes.length===0) return '<div style="text-align:center;padding:40px;color:#aaa;font-size:14px;border:1px dashed #ddd;border-radius:12px;">Nenhum 1:1 registrado ainda.</div>';
-        return '<div style="display:flex;flex-direction:column;gap:12px;">'+myOnes.map(o=>{
-          const dataStr = o.data ? new Date(o.data+'T00:00:00').toLocaleDateString('pt-BR') : '';
-          const colab = DB.colaboradores.find(c=> normalizeStr(c.nome||c.Nome||'')===normalizeStr(o.nome));
-          const area = colab ? (colab.area||colab.departamento||'') : '';
-          const areaColors = AREA_COLORS_MAP;
-          const areaColor = getAreaColor(area);
-          return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;">'+
-            '<div style="flex:1;">'+
-              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'+
-                '<span style="font-weight:700;font-size:15px;">'+esc(o.titulo||'Sem título')+'</span>'+
-                '<span style="font-size:12px;color:#888;">'+dataStr+'</span>'+
-              '</div>'+
-              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+
-                '<span style="font-weight:600;font-size:13px;">'+esc(o.nome)+'</span>'+
-                (area ? '<span style="background:'+areaColor+';color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;">'+esc(area)+'</span>' : '')+
-              '</div>'+
-              '<div style="font-size:13px;color:#555;line-height:1.5;white-space:pre-wrap;">'+esc(o.resumo||'')+'</div>'+
-            '</div>'+
-            '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'+
-              '<button class="btn btn-outline btn-sm oo-edit" data-oo-id="'+esc(o.id)+'" title="Editar" style="padding:6px 8px;">'+ICONS.edit+'</button>'+
-              '<button class="btn btn-danger btn-sm oo-delete" data-oo-id="'+esc(o.id)+'" title="Excluir" style="padding:6px 8px;">'+ICONS.trash+'</button>'+
-            '</div>'+
-          '</div>';
-        }).join('')+'</div>';
-      })()}
-    </div>`;
+    `;
+}
 }
 
 function bindAcompanhamentos(){
@@ -8055,7 +7989,82 @@ function bindAcompanhamentos(){
     });
   });
 
-  // 1:1 bindings
+}
+
+/* =========================================================
+   1:1s — CUSTOM PAGE
+========================================================= */
+function renderOneOnOnes(){
+  const colabs = getMyColaboradores();
+  const myNames = getMyColabNames();
+  const myOnes = DB.oneOnOnes.filter(o=> myNames.has(normalizeStr(o.nome)));
+  myOnes.sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+
+  const colabOptions = colabs.map(c=>{
+    const nome = c.nome || c.Nome || '';
+    return '<option value="'+esc(nome)+'">'+esc(nome)+'</option>';
+  }).join('');
+
+  const cards = myOnes.length===0
+    ? '<div style="text-align:center;padding:40px;color:#aaa;font-size:14px;border:1px dashed #ddd;border-radius:12px;">Nenhum 1:1 registrado ainda.</div>'
+    : '<div style="display:flex;flex-direction:column;gap:12px;">'+myOnes.map(o=>{
+        const dataStr = o.data ? new Date(o.data+'T00:00:00').toLocaleDateString('pt-BR') : '';
+        const colab = DB.colaboradores.find(c=> normalizeStr(c.nome||c.Nome||'')===normalizeStr(o.nome));
+        const area = colab ? (colab.area||colab.departamento||'') : '';
+        const areaColor = getAreaColor(area);
+        return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;display:flex;gap:16px;align-items:flex-start;">'+
+          '<div style="flex:1;">'+
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'+
+              '<span style="font-weight:700;font-size:15px;">'+esc(o.titulo||'Sem título')+'</span>'+
+              '<span style="font-size:12px;color:#888;">'+dataStr+'</span>'+
+            '</div>'+
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'+
+              '<span style="font-weight:600;font-size:13px;">'+esc(o.nome)+'</span>'+
+              (area ? '<span style="background:'+areaColor+';color:#fff;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;">'+esc(area)+'</span>' : '')+
+            '</div>'+
+            '<div style="font-size:13px;color:#555;line-height:1.5;white-space:pre-wrap;">'+esc(o.resumo||'')+'</div>'+
+          '</div>'+
+          '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'+
+            '<button class="btn btn-outline btn-sm oo-edit" data-oo-id="'+esc(o.id)+'" title="Editar" style="padding:6px 8px;">'+ICONS.edit+'</button>'+
+            '<button class="btn btn-danger btn-sm oo-delete" data-oo-id="'+esc(o.id)+'" title="Excluir" style="padding:6px 8px;">'+ICONS.trash+'</button>'+
+          '</div>'+
+        '</div>';
+      }).join('')+'</div>';
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <p style="margin:0;color:#888;font-size:13px;">Registre conversas individuais com colaboradores.</p>
+      </div>
+      <button class="btn btn-primary" id="btnNew1on1" style="width:auto;">${ICONS.plus} Novo 1:1</button>
+    </div>
+
+    <div id="form1on1" style="display:none;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+        <div class="field"><label>Colaborador</label>
+          <select id="oo_nome" class="select">
+            <option value="">Selecione...</option>
+            ${colabOptions}
+          </select>
+        </div>
+        <div class="field"><label>Data</label><input type="date" id="oo_data" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div class="field"><label>Título</label><input type="text" id="oo_titulo" placeholder="Ex: Alinhamento de metas Q3"></div>
+      <div class="field"><label>Resumo da conversa</label><textarea id="oo_resumo" rows="4" placeholder="Principais pontos discutidos..."></textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-outline" id="btnCancel1on1">Cancelar</button>
+        <button class="btn btn-primary" id="btnSave1on1" style="width:auto;">Salvar</button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:12px;color:#888;font-size:13px;font-weight:600;">${myOnes.length} registro${myOnes.length!==1?'s':''}</div>
+    ${cards}
+  `;
+}
+
+function bindOneOnOnes(){
+  const rerender = ()=>{ const c=document.getElementById('content'); c.innerHTML=renderOneOnOnes(); bindOneOnOnes(); };
+
   const btnNew = document.getElementById('btnNew1on1');
   const form1on1 = document.getElementById('form1on1');
   if(btnNew && form1on1){
