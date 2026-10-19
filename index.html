@@ -1014,6 +1014,18 @@ let DB = {
 const GH_SYNC_KEYS = ['solicitacoes','colaboradores','promocoes','desligamentos','pdis','oneOnOnes','bancoHorasImport','acompanhamentos','scores','enps','processosBP','processosInstancias','meetings','relatorios1on1','vagas'];
 var _ghReceiving = false;
 
+/* ---- Migração: acompanhamento 20 dias → 30 dias ---- */
+(function migrateAcomp20to30(){
+  var changed = false;
+  DB.acompanhamentos.forEach(function(a){
+    if(a.milestone === 20){ a.milestone = 30; changed = true; }
+  });
+  if(changed){
+    saveJSON(LS.acompanhamentos, DB.acompanhamentos);
+    console.log('Migração: acompanhamentos 20 dias → 30 dias concluída');
+  }
+})();
+
 /* ---- DELETED IDS TRACKING (impede re-sync de registros deletados) ---- */
 const _DELETED_IDS_KEY = 'planning_deleted_ids';
 function _getDeletedIds(){
@@ -3132,7 +3144,7 @@ function computeAutoData(area, period, lider, customStart, customEnd){
   const experiencia = [];
   activeColabs.forEach(c=>{
     if(!c.admissao) return;
-    [7,20,45,90].forEach(days=>{
+    [7,30,45,90].forEach(days=>{
       const milestoneDate = new Date(c.admissao.getTime()+days*86400000);
       if(milestoneDate>=start && milestoneDate<=end){
         experiencia.push({nome:c.nome, cargo:c.cargo, admissao:c.admissao, milestone:days, milestoneDate, status:'Pendente', observacao:''});
@@ -7826,7 +7838,7 @@ function renderAcompanhamentos(){
     return true;
   });
 
-  const cols = [7,20,45,90].map(m => {
+  const cols = [7,30,45,90].map(m => {
     const items = pending.filter(r=>r.milestone===m);
     items.sort((a,b)=>a.diffDays - b.diffDays);
     return { milestone:m, items };
@@ -11141,7 +11153,7 @@ function exportColaboradorDetailPDF(nome){
   if(adm && !isNaN(adm)){
     const today = new Date(); today.setHours(0,0,0,0);
     const acomps = DB.acompanhamentos.filter(a=> normalizeStr(a.nome)===normalizeStr(c.nome||c.Nome||''));
-    const msRows = [7,20,45,90].map(days=>{
+    const msRows = [7,30,45,90].map(days=>{
       const due = new Date(adm.getTime()+days*86400000);
       const saved = acomps.find(a=>a.milestone===days);
       const status = saved && saved.status && saved.status!=='Pendente' ? saved.status+(saved.realizado?' em '+fmtDatePDF(saved.realizado):'') : 'Pendente';
@@ -11690,7 +11702,7 @@ function renderAgendaBP(){
   const events=[];
 
   // Experiencia milestones from admissao
-  const expMilestones=[7,20,45,90];
+  const expMilestones=[7,30,45,90];
   colabs.forEach(c=>{
     const adm=parseDate(c.admissao||c.Admissão||c.dataAdmissao||'');
     if(!adm) return;
