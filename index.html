@@ -5009,7 +5009,13 @@ function renderDashboard(){
     else { const pn = normalizeStr(p.nome||''); if(!pn || !myColabNames.has(pn)) return false; }
     return (p.status||'')!=='Concluído';
   }).length;
-  const totalSolPendentes = DB.solicitacoes.filter(s=>s.status==='pendente_bp'||s.status==='pendente').length;
+  const _dashBpName = normalizeStr(bp ? bp.name : '');
+  const totalSolPendentes = DB.solicitacoes.filter(s=>{
+    if(!(s.status==='pendente_bp'||s.status==='pendente')) return false;
+    if(s.bpResponsavel) return normalizeStr(s.bpResponsavel)===_dashBpName;
+    if(s.nome && myColabNames) return myColabNames.has(normalizeStr(s.nome));
+    return true;
+  }).length;
 
   // eNPS/lNPS from scores
   const myScores = DB.scores.filter(s=>(s.tipo||'area')==='area').filter(s=> fArea ? normalizeStr(s.area)===normalizeStr(fArea) : expandedAreas.has(normalizeStr(s.area||'')) && (s.bpId==null || Number(s.bpId)===_dashBpId));
@@ -12028,6 +12034,23 @@ function renderLiderForms(ct){
     const sol = {id:Date.now(), type:data.type, status:statusInicial, liderNome:SESSION.liderNome, dataSolicitacao:new Date().toISOString(), headNome:headDoLider||null, headAprovacao:null, headJustificativa:null, headDataResposta:null};
     delete data.type;
     Object.assign(sol, data);
+    // Determinar BP responsável pelo colaborador da solicitação
+    if(sol.nome){
+      const colabSol = DB.colaboradores.find(c=>normalizeStr(c.nome||c.Nome||'')===normalizeStr(sol.nome));
+      if(colabSol && colabSol.bpResponsavel) sol.bpResponsavel = colabSol.bpResponsavel;
+      else {
+        const bp = CONFIG.bps.find(b=>{
+          if(b.heads && b.heads.length){
+            for(const h of b.heads){
+              const tree = getTeamTree(h);
+              if(tree.some(c=>normalizeStr(c.nome||c.Nome||'')===normalizeStr(sol.nome))) return true;
+            }
+          }
+          return false;
+        });
+        if(bp) sol.bpResponsavel = bp.name;
+      }
+    }
     DB.solicitacoes.push(sol);
     persist('solicitacoes');
     // Notificar o head se houver
@@ -14222,7 +14245,17 @@ function renderSolicitacoes(){
   const typeColor = {promocao:'#962DFF', desligamento:'#ff4343', movimentacao:'#14C8FA', efetivacao:'#065f46'};
   const statusColors = {pendente:'#FA6914', pendente_head:'#f59e0b', pendente_bp:'#FA6914', aprovado:'#0AE18C', rejeitado:'#ff4343'};
   const statusLabels = {pendente:'Pendente', pendente_head:'Aguardando Head', pendente_bp:'Aguardando BP', aprovado:'Aprovado', rejeitado:'Rejeitado'};
-  const all = DB.solicitacoes.slice().sort((a,b)=>b.id-a.id);
+  // Filtrar solicitações pela BP logada
+  const bp = currentBP();
+  const myColabNames = getMyColabNames();
+  const bpName = bp ? normalizeStr(bp.name) : '';
+  const all = DB.solicitacoes.filter(s=>{
+    // Se tem bpResponsavel definido, usar como filtro principal
+    if(s.bpResponsavel) return normalizeStr(s.bpResponsavel)===bpName;
+    // Fallback: verificar se o colaborador da solicitação pertence à equipe da BP
+    if(s.nome && myColabNames) return myColabNames.has(normalizeStr(s.nome));
+    return true; // solicitações sem nome nem bpResponsavel mostram para todas
+  }).sort((a,b)=>b.id-a.id);
   const filtered = solBpTab==='todos' ? all : all.filter(s=>s.type===solBpTab);
   const pendCount = all.filter(s=>s.status==='pendente_bp'||s.status==='pendente').length;
 
@@ -14782,12 +14815,14 @@ function bindSolicitacoes(){
     fd.forEach((v,k)=>{ data[k]=v; });
     const lider = data.liderNome || '';
     delete data.liderNome;
+    const bp = currentBP();
     const sol = {
       id: Date.now(),
       type: solAddType,
       status: 'pendente',
       liderNome: lider,
-      dataSolicitacao: new Date().toISOString()
+      dataSolicitacao: new Date().toISOString(),
+      bpResponsavel: bp ? bp.name : ''
     };
     Object.assign(sol, data);
     DB.solicitacoes.push(sol);
