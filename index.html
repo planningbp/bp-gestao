@@ -468,8 +468,8 @@ const CONFIG = {
       areas:["Contábil","Fiscal","Folha","BPO Financeiro","Financeiro Interno","Controladoria","TI","Desenvolvedores","Comercial","Marketing","Expansão","Consultoria"], role:"gerente" }
   ],
   socios: ["Daniel Soares de Faria","Tiago de Souza Macario"],
-  periods: ["Jan/Fev 2025","Mar/Abr 2025","Mai/Jun 2025","Jul/Ago 2025","Set/Out 2025","Nov/Dez 2025",
-    "Jan/Fev 2026","Mar/Abr 2026","Mai/Jun 2026","Jul/Ago 2026","Set/Out 2026","Nov/Dez 2026"]
+  periods: ["Jan 2025","Fev 2025","Mar 2025","Abr 2025","Mai 2025","Jun 2025","Jul 2025","Ago 2025","Set 2025","Out 2025","Nov 2025","Dez 2025",
+    "Jan 2026","Fev 2026","Mar 2026","Abr 2026","Mai 2026","Jun 2026","Jul 2026","Ago 2026","Set 2026","Out 2026","Nov 2026","Dez 2026"]
 };
 const MONTHNUM = {jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12};
 const MONTHNAMES_FULL = {janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
@@ -746,6 +746,9 @@ function parseBRL(v){
   return parseFloat(s) || 0;
 }
 function getSalario(c){ return parseBRL(c.faixaSalarial||c.faixa_salarial||c['Faixa Salarial']||c.salario||'0'); }
+function fmtBRL(v){ const n=typeof v==='number'?v:parseBRL(v); if(!n&&n!==0) return ''; return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+/* Chaves de campos monetários — usadas para formatar automaticamente no CRUD */
+const MONEY_FIELDS = new Set(['faixaSalarial','faixa_salarial','Faixa Salarial','salario','salarioAdmissao','salarioAtual','valorAprovado','custoRescisorio','remuneracao']);
 function parseExcelDate(val){
   if(val==null || val==='') return null;
   if(val instanceof Date && !isNaN(val)) return val;
@@ -2433,6 +2436,7 @@ function renderCrudPage(pageKey){
               + visibleCols.map(c=>{
                 let val = r[c.key]||'';
                 if(val instanceof Date && !isNaN(val)) val = val.toLocaleDateString('pt-BR');
+                else if(MONEY_FIELDS.has(c.key) && val) val = fmtBRL(val);
                 // For PDI nome column, add expand toggle
                 if(c.key==='nome' && hasAcoes){
                   return '<td style="padding:10px 12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="Clique para ver ações" class="pdiExpandToggle" data-pdi-idx="'+i+'"><span style="font-size:10px;margin-right:6px;" class="pdiArrow">&#9654;</span><strong>'+esc(String(val))+'</strong></td>';
@@ -2733,6 +2737,7 @@ function bindCrudPage(pageKey){
       fields.innerHTML = cfg.cols.filter(c=>!c.computed).map(c=>{
         let val = rec[c.key]||'';
         if(val instanceof Date && !isNaN(val)) val = val.toISOString().slice(0,10);
+        else if(MONEY_FIELDS.has(c.key) && val) val = fmtBRL(val);
         return '<div class="field"><label>'+c.label+'</label>'
           + (c.type==='select' ? '<select id="crudEdit_'+pageKey+'_'+c.key+'" class="select">'+c.options.map(o=>'<option value="'+esc(o)+'" '+(o===String(val)?'selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
           : '<input type="'+(c.type||'text')+'" id="crudEdit_'+pageKey+'_'+c.key+'" value="'+esc(String(val))+'" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;width:100%;box-sizing:border-box;">')
@@ -3094,8 +3099,8 @@ let UI = {
   formData: null,
   formSection: 0,
   detailMeetingId: null,
-  historyA: CONFIG.periods[6],
-  historyB: CONFIG.periods[8],
+  historyA: CONFIG.periods[12],
+  historyB: CONFIG.periods[14],
   execFilterPeriod: '',
   acompFilterArea: '',
   acompFilterLider: '',
@@ -4440,7 +4445,8 @@ function renderLiderDataPage(ct, dbKey, fields, labels){
     data.forEach(r=>{
       html += '<tr>';
       fields.forEach(f=>{
-        const val = r[f]||r[f.charAt(0).toUpperCase()+f.slice(1)]||'';
+        let val = r[f]||r[f.charAt(0).toUpperCase()+f.slice(1)]||'';
+        if(MONEY_FIELDS.has(f) && val) val = fmtBRL(val);
         html += `<td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(val))}</td>`;
       });
       html += '</tr>';
@@ -5917,6 +5923,7 @@ function renderImportPreviewTables(){
       :c.map((r,i)=>{const oi=cIdx[i];return`<tr>${cKeys.map(k=>{
         if(k==='_area') return '<td>'+areaCell(r)+'</td>';
         if(k==='nascimento'||k==='admissao'||k==='efetivacao'||k==='pejotizacao') return '<td>'+inp('colaboradores',oi,k+'Str',fmtDate(r[k]))+'</td>';
+        if(MONEY_FIELDS.has(k) && r[k]) return '<td>'+inp('colaboradores',oi,k,fmtBRL(r[k]))+'</td>';
         return '<td>'+inp('colaboradores',oi,k,r[k])+'</td>';
       }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('colaboradores',oi)}</td></tr>`}).join('')}
     </tbody></table></div>
@@ -5948,6 +5955,7 @@ function renderImportPreviewTables(){
         if(k==='_area') return '<td>'+areaCell(r)+'</td>';
         if(k==='mesDate') return '<td>'+inp('promocoes',oi,k+'Str',fmtDate(r[k]))+'</td>';
         if(k==='pct') return '<td>'+inp('promocoes',oi,'pctStr',r.pct!=null?fmtPct(r.pct*100):'')+'</td>';
+        if(MONEY_FIELDS.has(k) && r[k]) return '<td>'+inp('promocoes',oi,k,fmtBRL(r[k]))+'</td>';
         return '<td>'+inp('promocoes',oi,k,r[k])+'</td>';
       }).join('')}<td style="position:sticky;right:0;background:#fff;z-index:1;box-shadow:-4px 0 8px rgba(0,0,0,0.05);">${del('promocoes',oi)}</td></tr>`}).join('')}
     </tbody></table></div>
@@ -6687,7 +6695,7 @@ function renderMeetingForm(){
               <div class="field"><label>Data início</label><input id="f_dataInicio" type="text" placeholder="dd/mm/aaaa" value="${fd.dataInicio||''}" maxlength="10"></div>
               <div class="field"><label>Data fim</label><input id="f_dataFim" type="text" placeholder="dd/mm/aaaa" value="${fd.dataFim||''}" maxlength="10"></div>
             </div>
-            <p style="font-size:11px;color:#888;margin:6px 0 0;">Defina o intervalo exato (dd/mm/aaaa) para filtrar admissões, desligamentos e acompanhamentos. Se vazio, usa o período bimestral acima.</p>
+            <p style="font-size:11px;color:#888;margin:6px 0 0;">Defina o intervalo exato (dd/mm/aaaa) para filtrar admissões, desligamentos e acompanhamentos. Se vazio, usa o período mensal acima.</p>
           </div>
           ${hasImport? '<p style="font-size:12px;color:var(--primary-dark);margin-top:10px;">Dados importados detectados: os campos automáticos da seção 2 serão calculados ao avançar.</p>' : '<p style="font-size:12px;color:var(--text-light);margin-top:10px;">Nenhum dado importado ainda. Acesse "Importar Dados" para habilitar o cálculo automático.</p>'}
         </div>
@@ -12098,7 +12106,7 @@ function renderLiderAprovacoes(ct){
   const pendCount = pendentes.length;
 
   function renderSolCard(s, showActions){
-    const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(String(s[k]))+'</div>').join('');
+    const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(MONEY_FIELDS.has(k)?fmtBRL(s[k]):String(s[k]))+'</div>').join('');
     return `
     <div class="card head-sol-card" data-sol-id="${s.id}" style="padding:16px;margin-bottom:10px;cursor:pointer;${s.status==='pendente_head'?'border-left:4px solid #FA6914;':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -12246,7 +12254,7 @@ function renderLiderSolicitacoes(ct){
     <div id="lsolList">
       ${mySol.length===0?'<div class="card" style="padding:20px;text-align:center;color:#888;">Nenhuma solicitação enviada.</div>':''}
       ${mySol.map(s=>{
-        const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(String(s[k]))+'</div>').join('');
+        const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(MONEY_FIELDS.has(k)?fmtBRL(s[k]):String(s[k]))+'</div>').join('');
         return `
         <div class="card lsol-card" data-sol-type="${s.type}" data-sol-status="${s.status}" style="padding:16px;margin-bottom:10px;cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -13114,7 +13122,7 @@ function bindTagsPage(){
    CRONOGRAMA BP — Processos Operacionais
 ========================================================= */
 const CRONO_AREAS = ['Contábil','Fiscal','Folha','Compartilhado'];
-const CRONO_FREQ = {mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
+const CRONO_FREQ = {mensal:'Mensal',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
 const CRONO_STATUS_COLORS = {concluido:'#22c55e',pendente:'#94a3b8',atrasado:'#ef4444',hoje:'#3b82f6',proximo:'#f59e0b'};
 const CRONO_STATUS_LABELS = {concluido:'Concluído',pendente:'Pendente',atrasado:'Atrasado',hoje:'Hoje',proximo:'Próximo'};
 let _cronoView = 'geral'; // geral | cronograma | processos | pendencias
@@ -13516,7 +13524,6 @@ function _shouldShowInMonth(proc, mes){
   const f = proc.frequencia;
   if(f==='mensal') return true;
   const p = mes.split('-'); const y=Number(p[0]); const m=Number(p[1]);
-  if(f==='bimestral') return m%2===0;
   if(f==='trimestral') return m%3===1;
   if(f==='semestral') return m===1||m===7;
   if(f==='anual') return m===1;
@@ -14404,7 +14411,7 @@ function renderSolicitacoes(){
     </div>
     <div id="solList">
       ${filtered.map(s=>{
-        const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(String(s[k]))+'</div>').join('');
+        const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(MONEY_FIELDS.has(k)?fmtBRL(s[k]):String(s[k]))+'</div>').join('');
         return `
         <div class="card sol-card" data-sol-id="${s.id}" data-sol-type="${s.type}" data-sol-status="${s.status}" style="padding:16px;margin-bottom:10px;cursor:pointer;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -14865,7 +14872,8 @@ function bindSolicitacoes(){
       const skipEdit = ['id','type','status'];
       Object.keys(sol).filter(k=>!skipEdit.includes(k)).forEach(k=>{
         const label = solFieldLabels[k] || k;
-        const val = sol[k] || '';
+        let val = sol[k] || '';
+        if(MONEY_FIELDS.has(k) && val) val = fmtBRL(val);
         html += '<div class="field"><label>'+esc(label)+'</label><input type="text" id="solEdit_'+k+'" value="'+esc(String(val))+'" class="input"></div>';
       });
       fields.innerHTML = html;
