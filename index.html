@@ -835,26 +835,26 @@ function _openIDB(){
 }
 
 function anexoSave(key, data, fileName){
-  // Tenta salvar no localStorage individual primeiro (mais simples)
+  // Tenta salvar no localStorage individual primeiro (cache local)
   try {
     localStorage.setItem('_anexo_'+key, JSON.stringify({data:data, nome:fileName}));
     console.log('Anexo salvo no localStorage:', key);
-    return Promise.resolve(true);
   } catch(e){
     console.warn('localStorage cheio, tentando IndexedDB...', e);
+    _openIDB().then(function(db){
+      return new Promise(function(resolve,reject){
+        var tx = db.transaction('files','readwrite');
+        tx.objectStore('files').put({data:data, nome:fileName}, key);
+        tx.oncomplete = function(){ console.log('Anexo salvo no IndexedDB:', key); resolve(true); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    }).catch(function(e2){ console.error('Falha ao salvar anexo localmente:', key, e2); });
   }
-  // Fallback: IndexedDB
-  return _openIDB().then(function(db){
-    return new Promise(function(resolve,reject){
-      var tx = db.transaction('files','readwrite');
-      tx.objectStore('files').put({data:data, nome:fileName}, key);
-      tx.oncomplete = function(){ console.log('Anexo salvo no IndexedDB:', key); resolve(true); };
-      tx.onerror = function(){ reject(tx.error); };
-    });
-  }).catch(function(e){
-    console.error('Falha ao salvar anexo:', key, e);
-    return false;
-  });
+  // Sempre salvar no GitHub (fonte de verdade compartilhada)
+  return ghWriteAnexo(key, data, fileName).then(function(ok){
+    if(!ok) console.warn('Anexo salvo localmente mas não no GitHub:', key);
+    return true;
+  }).catch(function(){ return true; });
 }
 
 function anexoLoad(key){
@@ -871,19 +871,32 @@ function anexoLoad(key){
       req.onsuccess = function(){ resolve(req.result||null); };
       req.onerror = function(){ reject(req.error); };
     });
+  }).then(function(result){
+    if(result) return result;
+    // Fallback: GitHub (fonte de verdade compartilhada)
+    return ghReadAnexo(key).then(function(ghResult){
+      if(ghResult){
+        // Cache localmente para próximo acesso
+        try { localStorage.setItem('_anexo_'+key, JSON.stringify(ghResult)); } catch(e){}
+        return ghResult;
+      }
+      return null;
+    });
   }).catch(function(e){ console.warn('Falha ao carregar anexo:', key, e); return null; });
 }
 
 function anexoDelete(key){
   try { localStorage.removeItem('_anexo_'+key); } catch(e){}
-  return _openIDB().then(function(db){
+  _openIDB().then(function(db){
     return new Promise(function(resolve,reject){
       var tx = db.transaction('files','readwrite');
       tx.objectStore('files').delete(key);
       tx.oncomplete = resolve;
       tx.onerror = function(){ resolve(); };
     });
-  }).catch(function(){ return; });
+  }).catch(function(){});
+  // Também remove do GitHub
+  ghDeleteAnexo(key);
 }
 
 // Alias mantidos para compatibilidade
@@ -1150,12 +1163,53 @@ const GH_DATE_FIELDS = {
 
 function _ghStripBinary(part, payload){
   if(part==='acompanhamentos' && Array.isArray(payload)){
-    return payload.map(function(a){ var c=Object.assign({},a); delete c.anexo; delete c.anexoNome; delete c.anexoRef; return c; });
+    return payload.map(function(a){ var c=Object.assign({},a); delete c.anexo; return c; });
   }
   if(part==='processosBP' && Array.isArray(payload)){
     return payload.map(function(p){ var c=Object.assign({},p); if(c.prints) delete c.prints; return c; });
   }
   return payload;
+}
+
+/* ---- GITHUB ANEXO STORAGE ---- */
+async function ghWriteAnexo(anexoKey, data, fileName){
+  try {
+    var path = 'data/anexos/'+encodeURIComponent(anexoKey)+'.json';
+    var apiUrl = 'https://api.github.com/repos/'+GH_SYNC.owner+'/'+GH_SYNC.repo+'/contents/'+path;
+    var payload = JSON.stringify({data:data, nome:fileName});
+    var content = btoa(unescape(encodeURIComponent(payload)));
+    var body = {message:'anexo: '+anexoKey, content:content, branch:GH_SYNC.branch};
+    // Check if file already exists (need sha to update)
+    try {
+      var existing = await fetch(apiUrl, {headers:GH_SYNC._headers()});
+      if(existing.ok){ var ed = await existing.json(); body.sha = ed.sha; }
+    } catch(e){}
+    var res = await fetch(apiUrl, {method:'PUT', headers:GH_SYNC._headers(), body:JSON.stringify(body)});
+    if(res.ok){ console.log('Anexo salvo no GitHub:', anexoKey); return true; }
+    console.warn('Falha ao salvar anexo no GitHub:', res.status);
+    return false;
+  } catch(e){ console.error('Erro ao salvar anexo no GitHub:', e); return false; }
+}
+async function ghReadAnexo(anexoKey){
+  try {
+    var path = 'data/anexos/'+encodeURIComponent(anexoKey)+'.json';
+    var apiUrl = 'https://api.github.com/repos/'+GH_SYNC.owner+'/'+GH_SYNC.repo+'/contents/'+path;
+    var res = await fetch(apiUrl, {headers:GH_SYNC._headers()});
+    if(!res.ok) return null;
+    var d = await res.json();
+    var decoded = decodeURIComponent(escape(atob(d.content.replace(/\n/g,''))));
+    return JSON.parse(decoded);
+  } catch(e){ console.warn('Falha ao ler anexo do GitHub:', e); return null; }
+}
+async function ghDeleteAnexo(anexoKey){
+  try {
+    var path = 'data/anexos/'+encodeURIComponent(anexoKey)+'.json';
+    var apiUrl = 'https://api.github.com/repos/'+GH_SYNC.owner+'/'+GH_SYNC.repo+'/contents/'+path;
+    var existing = await fetch(apiUrl, {headers:GH_SYNC._headers()});
+    if(!existing.ok) return;
+    var ed = await existing.json();
+    await fetch(apiUrl, {method:'DELETE', headers:GH_SYNC._headers(), body:JSON.stringify({message:'remove anexo: '+anexoKey, sha:ed.sha, branch:GH_SYNC.branch})});
+  } catch(e){ console.warn('Falha ao deletar anexo do GitHub:', e); }
 }
 
 // Read a single key from GitHub
@@ -3149,7 +3203,6 @@ function render(){
 /* ---------------- LOGIN ---------------- */
 let loginTab = 'bp';
 function renderLogin(){
-  const liders = getAllLiders();
   return `
   <div class="login-wrap">
     <div class="login-card">
@@ -3178,19 +3231,16 @@ function renderLogin(){
       </div>
 
       <div id="panelLider" style="display:${loginTab==='lider'?'block':'none'};">
-        <div class="field"><label>Selecione seu nome</label>
-          <select id="liderSelect" class="select" style="font-size:14px;">
-            <option value="">Selecione...</option>
-            ${liders.map(l=>'<option value="'+esc(l)+'">'+esc(l)+'</option>').join('')}
-          </select>
-        </div>
-        <div class="field"><label>Senha</label><input type="password" id="liderPass" placeholder="••••••••"></div>
-        <div id="liderNewPassWrap" style="display:none;">
-          <div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;">Primeiro acesso! Crie sua senha.</div>
-          <div class="field"><label>Criar senha</label><input type="password" id="liderNewPass" placeholder="Crie sua senha"></div>
-          <div class="field"><label>Confirmar senha</label><input type="password" id="liderNewPass2" placeholder="Confirme a senha"></div>
-        </div>
-        <button type="button" class="btn btn-primary" id="btnLiderLogin">Entrar como Líder</button>
+        <form id="liderLoginForm">
+          <div class="field"><label>E-mail corporativo</label><input type="email" id="liderEmail" placeholder="seu.email@empresa.com.br" required></div>
+          <div class="field"><label>Senha</label><input type="password" id="liderPass" placeholder="••••••••"></div>
+          <div id="liderNewPassWrap" style="display:none;">
+            <div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;">Primeiro acesso! Crie sua senha.</div>
+            <div class="field"><label>Criar senha</label><input type="password" id="liderNewPass" placeholder="Crie sua senha (mín. 4 caracteres)"></div>
+            <div class="field"><label>Confirmar senha</label><input type="password" id="liderNewPass2" placeholder="Confirme a senha"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">Entrar como Líder</button>
+        </form>
       </div>
 
     </div>
@@ -3255,14 +3305,22 @@ function bindLogin(){
     doLogin(bp.id);
   });
 
-  // Líder login
-  const liderSel = document.getElementById('liderSelect');
-  if(liderSel) liderSel.addEventListener('change', ()=>{
-    const nome = liderSel.value;
+  // Líder login — por e-mail corporativo
+  const liderEmailField = document.getElementById('liderEmail');
+  if(liderEmailField) liderEmailField.addEventListener('blur', function(){
+    const email = liderEmailField.value.trim().toLowerCase();
+    if(!email) return;
+    // Busca líder pelo e-mail no cadastro de colaboradores
+    const liderColab = findLiderByEmail(email);
     const wrap = document.getElementById('liderNewPassWrap');
     const passField = document.getElementById('liderPass');
-    if(!nome){ wrap.style.display='none'; return; }
-    const key = normalizeStr(nome);
+    if(!liderColab){
+      wrap.style.display='none';
+      passField.style.display='block';
+      passField.placeholder='Sua senha';
+      return;
+    }
+    const key = email.toLowerCase();
     if(LIDER_PASSWORDS[key]){
       wrap.style.display='none';
       passField.style.display='block';
@@ -3273,29 +3331,38 @@ function bindLogin(){
     }
   });
 
-  const btnLider = document.getElementById('btnLiderLogin');
-  if(btnLider) btnLider.addEventListener('click', ()=>{
-    const nome = (document.getElementById('liderSelect')||{}).value;
-    if(!nome){ document.getElementById('loginErr').innerHTML='<div class="login-err">Selecione seu nome.</div>'; return; }
-    const key = normalizeStr(nome);
+  const liderForm = document.getElementById('liderLoginForm');
+  if(liderForm) liderForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    const email = (document.getElementById('liderEmail')||{}).value.trim().toLowerCase();
+    if(!email){ document.getElementById('loginErr').innerHTML='<div class="login-err">Informe seu e-mail corporativo.</div>'; return; }
+
+    // Busca líder pelo e-mail no cadastro de colaboradores
+    const liderColab = findLiderByEmail(email);
+    if(!liderColab){
+      document.getElementById('loginErr').innerHTML='<div class="login-err">E-mail não encontrado ou você não é um líder cadastrado.</div>';
+      return;
+    }
+    const nome = (liderColab.nome||liderColab.Nome||'').trim();
+    const key = email.toLowerCase();
 
     if(LIDER_PASSWORDS[key]){
-      // Has password — verify
+      // Já tem senha — verificar
       const pass = (document.getElementById('liderPass')||{}).value;
       if(pass !== LIDER_PASSWORDS[key]){
         document.getElementById('loginErr').innerHTML='<div class="login-err">Senha incorreta.</div>';
         return;
       }
     } else {
-      // First access — create password
+      // Primeiro acesso — criar senha
       const p1 = (document.getElementById('liderNewPass')||{}).value;
       const p2 = (document.getElementById('liderNewPass2')||{}).value;
-      if(!p1 || p1.length < 3){ document.getElementById('loginErr').innerHTML='<div class="login-err">A senha deve ter pelo menos 3 caracteres.</div>'; return; }
+      if(!p1 || p1.length < 4){ document.getElementById('loginErr').innerHTML='<div class="login-err">A senha deve ter pelo menos 4 caracteres.</div>'; return; }
       if(p1 !== p2){ document.getElementById('loginErr').innerHTML='<div class="login-err">As senhas não coincidem.</div>'; return; }
       LIDER_PASSWORDS[key] = p1;
       saveLiderPasswords();
     }
-    doLiderLogin(nome);
+    doLiderLogin(nome, email);
   });
 }
 function doLogin(bpId){
@@ -3304,10 +3371,22 @@ function doLogin(bpId){
   UI.page = 'dashboard';
   render();
 }
-function doLiderLogin(nome){
-  SESSION = { type:'lider', liderNome: nome };
+function doLiderLogin(nome, email){
+  SESSION = { type:'lider', liderNome: nome, liderEmail: email||'' };
   saveJSON(LS.session, SESSION);
   render();
+}
+/* Busca um líder pelo e-mail corporativo no cadastro de colaboradores */
+function findLiderByEmail(email){
+  if(!email) return null;
+  const e = email.toLowerCase();
+  const allLiderNames = new Set(getAllLiders().map(n=>normalizeStr(n)));
+  return DB.colaboradores.find(c=>{
+    const cEmail = (c.email||c.Email||'').toLowerCase();
+    if(cEmail !== e) return false;
+    const cNome = normalizeStr(c.nome||c.Nome||'');
+    return allLiderNames.has(cNome);
+  }) || null;
 }
 function doLogout(){
   SESSION = null; localStorage.removeItem(LS.session);
@@ -3725,11 +3804,11 @@ function renderLiderRelatorio(ct){
   } else html += '<div style="color:#aaa;font-size:13px;">Nenhum desligamento registrado</div>';
   html += '</div>';
 
-  // ===== 3. ACOMPANHAMENTOS (7/20/45/90 dias) =====
+  // ===== 3. ACOMPANHAMENTOS (7/30/45/90 dias) =====
   html += `<div class="card" style="margin-bottom:20px;">
     <div class="section-title">Acompanhamentos — Avaliações de Experiência (${acomp.length})</div>`;
   if(acomp.length){
-    const tipoOrder = {'7 dias':1,'20 dias':2,'30 dias':3,'45 dias':4,'60 dias':5,'90 dias':6};
+    const tipoOrder = {'7 dias':1,'30 dias':2,'45 dias':3,'60 dias':4,'90 dias':5};
     const acompSorted = acomp.slice().sort((a,b)=>{
       const na = normalizeStr(a.colaborador||''), nb = normalizeStr(b.colaborador||'');
       if(na!==nb) return na.localeCompare(nb);
@@ -4587,7 +4666,7 @@ const PAGE_TITLES = {
   settings:['Configurações','Perfil e áreas do Business Partner'],
   form:['Reunião','Registro de reunião de BP'],
   detail:['Detalhe da Reunião','Resumo executivo e indicadores'],
-  acompanhamentos:['Acompanhamentos','Acompanhamento de novos colaboradores (7/20/45/90 dias)'],
+  acompanhamentos:['Acompanhamentos','Acompanhamento de novos colaboradores (7/30/45/90 dias)'],
   colaboradores:['Colaboradores','Cadastro e histórico de interações'],
   colaboradorDetail:['Colaborador','Detalhes e registros do colaborador'],
   desligamentos:['Desligamentos','Gestão de desligamentos — importar, adicionar, editar e remover'],
@@ -6713,7 +6792,7 @@ function renderMeetingForm(){
           </div>
           ${renderMiniTable('admissoesTable','Admissões no período', fd.admissoesTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'lider',label:'Líder'},{key:'departamento',label:'Departamento'},{key:'regime',label:'Regime'},{key:'admissao',label:'Data admissão'}])}
           ${renderMiniTable('desligamentosTable','Desligamentos no período', fd.desligamentosTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'lider',label:'Líder'},{key:'tipo',label:'Tipo'},{key:'motivo',label:'Motivo'},{key:'submotivo',label:'Submotivo'},{key:'dtAdmissao',label:'Admissão'},{key:'ultimoDia',label:'Último dia'},{key:'tempoDeCasa',label:'Tempo de casa'}])}
-          ${renderMiniTable('experienciaTable','Acompanhamentos (7/20/45/90 dias)', fd.experienciaTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'admissao',label:'Admissão'},{key:'milestone',label:'Marco'},{key:'milestoneDate',label:'Data'},{key:'status',label:'Status'},{key:'observacao',label:'Observações'}])}
+          ${renderMiniTable('experienciaTable','Acompanhamentos (7/30/45/90 dias)', fd.experienciaTable, [{key:'nome',label:'Nome'},{key:'cargo',label:'Cargo'},{key:'admissao',label:'Admissão'},{key:'milestone',label:'Marco'},{key:'milestoneDate',label:'Data'},{key:'status',label:'Status'},{key:'observacao',label:'Observações'}])}
           ${renderMiniTable('promocoesTable','Promoções / Movimentações', fd.promocoesTable, [{key:'nome',label:'Nome'},{key:'gestor',label:'Gestor'},{key:'aprovador',label:'Aprovador'},{key:'cargoAnterior',label:'Cargo anterior'},{key:'salarioAnterior',label:'Salário anterior'},{key:'cargoNovo',label:'Cargo novo'},{key:'salarioNovo',label:'Salário novo'},{key:'reajuste',label:'Reajuste'},{key:'pct',label:'%'}])}
           ${(()=>{
             const areaColabs = DB.colaboradores.filter(c=> normalizeStr(c.area||c.departamento||'')===normalizeStr(fd.area));
@@ -7371,7 +7450,7 @@ function renderMeetingDetail(){
   </div>
   <div data-report-topic="admissoes">${detailMiniTable('Admissões no período', m.admissoesTable, ['Nome','Cargo','Líder','Departamento','Regime','Data admissão'], ['nome','cargo','lider','departamento','regime','admissao'])}</div>
   <div data-report-topic="desligamentos">${detailMiniTable('Desligamentos no período', m.desligamentosTable, ['Nome','Cargo','Líder','Tipo','Motivo','Submotivo','Admissão','Último dia','Tempo de casa'], ['nome','cargo','lider','tipo','motivo','submotivo','dtAdmissao','ultimoDia','tempoDeCasa'])}</div>
-  <div data-report-topic="acompanhamentos">${detailMiniTable('Acompanhamentos (7/20/45/90 dias)', m.experienciaTable, ['Nome','Cargo','Admissão','Marco','Data','Status','Observações'], ['nome','cargo','admissao','milestone','milestoneDate','status','observacao'])}</div>
+  <div data-report-topic="acompanhamentos">${detailMiniTable('Acompanhamentos (7/30/45/90 dias)', m.experienciaTable, ['Nome','Cargo','Admissão','Marco','Data','Status','Observações'], ['nome','cargo','admissao','milestone','milestoneDate','status','observacao'])}</div>
   <div data-report-topic="promocoes">${detailMiniTable('Promoções / Movimentações', m.promocoesTable, ['Nome','Gestor','Aprovador','Cargo anterior','Salário anterior','Cargo novo','Salário novo','Reajuste','%'], ['nome','gestor','aprovador','cargoAnterior','salarioAnterior','cargoNovo','salarioNovo','reajuste','pct'])}</div>
   <div data-report-topic="promocoes">${(()=>{
     const areaColabs = DB.colaboradores.filter(c=> normalizeStr(c.area||c.departamento||'')===normalizeStr(m.area));
@@ -7665,12 +7744,12 @@ function bindHistory(){
 }
 
 /* =========================================================
-   ACOMPANHAMENTOS (7/20/45/90 dias) — card columns
+   ACOMPANHAMENTOS (7/30/45/90 dias) — card columns
 ========================================================= */
 function getAcompanhamentoRecords(){
   const bp = currentBP();
   const colabs = getMyColaboradores();
-  const milestones = [7,20,45,90];
+  const milestones = [7,30,45,90];
   const records = [];
   const today = new Date(); today.setHours(0,0,0,0);
   colabs.forEach(c=>{
@@ -7761,7 +7840,7 @@ function renderAcompanhamentos(){
         <h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:10px;">
           ${ICONS.acomp} Alertas de Experiência
         </h2>
-        <p style="margin:4px 0 0;color:#888;font-size:13px;">Colaboradores dentro da janela de ±${WINDOW} dias dos marcos (7, 20, 45 e 90 dias). Selecione um mês para validar todos os registros do período.</p>
+        <p style="margin:4px 0 0;color:#888;font-size:13px;">Colaboradores dentro da janela de ±${WINDOW} dias dos marcos (7, 30, 45 e 90 dias). Selecione um mês para validar todos os registros do período.</p>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <select id="acompArea" class="select" style="min-width:150px;">
@@ -9825,7 +9904,7 @@ function renderColaboradorDetail(){
   const acomps = DB.acompanhamentos.filter(a=> normalizeStr(a.nome)===normalizeStr(nome));
 
   // Milestones
-  const milestones = [7,20,45,90];
+  const milestones = [7,30,45,90];
   const today = new Date(); today.setHours(0,0,0,0);
   const milestoneRecords = adm ? milestones.map(days=>{
     const dueDate = new Date(adm.getTime() + days*86400000);
@@ -9973,7 +10052,7 @@ function renderColaboradorDetail(){
     <!-- Milestones -->
     ${milestoneRecords.length>0 ? `
     <div class="card" style="margin-bottom:20px;">
-      <div class="section-title" style="margin-bottom:14px;">Marcos de Experiência (7/20/45/90 dias)</div>
+      <div class="section-title" style="margin-bottom:14px;">Marcos de Experiência (7/30/45/90 dias)</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
         ${milestoneRecords.map(m=>{
           const dueStr = m.dueDate.toLocaleDateString('pt-BR');
@@ -10653,7 +10732,7 @@ function _exportMeetingPDFInner(meetingId){
   // === ACOMPANHAMENTOS ===
   if(m.experienciaTable && m.experienciaTable.length){
     y = checkPage(y, 20);
-    y = secTitle('Acompanhamentos — 7/20/45/90 dias ('+m.experienciaTable.length+')', y);
+    y = secTitle('Acompanhamentos — 7/30/45/90 dias ('+m.experienciaTable.length+')', y);
     doc.autoTable({
       startY: y,
       head:[['Nome','Cargo','Admissão','Marco','Data','Status','Obs.']],
@@ -13341,10 +13420,10 @@ function _seedProcessosBP(){
       msgColab:'Olá {nome},\n\nGostaríamos de conversar com você sobre uma possibilidade de mudança de área aqui na Planning.\n\nIdentificamos uma oportunidade que pode ser interessante para o seu desenvolvimento profissional. Gostaríamos de agendar uma conversa para apresentar a proposta e entender se faz sentido para você.\n\nEssa conversa é para alinhar expectativas — nenhuma decisão será tomada sem o seu aceite.\n\nPodemos conversar?',
       msgFormal:'',
       ativo:true},
-      {id:uid(),nome:'Acompanhamento de Novos Colaboradores',descricao:'Processo completo de acompanhamento de novos colaboradores desde a admissão até a avaliação de experiência de 90 dias. Inclui cadastro no sistema, acompanhamentos de 7, 20, 45 e 90 dias, monitoramento das AVEs na Qulture.Rocks e devolutivas.',categoria:'Onboarding',areas:['Contábil','Fiscal','Folha','BPO Financeiro','Financeiro Interno','Controladoria','TI','Desenvolvedores','Comercial','Marketing','Expansão','Consultoria'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
-        {nome:'Cadastrar novos colaboradores no sistema (terças à tarde)',dia:0,descricao:'Todas as terças-feiras à tarde, após a integração, a BP deve incluir os novos colaboradores no sistema seguindo a planilha de admissão. Os colaboradores cadastrados vão automaticamente para a aba de Acompanhamentos com os marcos de 7, 20, 45 e 90 dias.'},
+      {id:uid(),nome:'Acompanhamento de Novos Colaboradores',descricao:'Processo completo de acompanhamento de novos colaboradores desde a admissão até a avaliação de experiência de 90 dias. Inclui cadastro no sistema, acompanhamentos de 7, 30, 45 e 90 dias, monitoramento das AVEs na Qulture.Rocks e devolutivas.',categoria:'Onboarding',areas:['Contábil','Fiscal','Folha','BPO Financeiro','Financeiro Interno','Controladoria','TI','Desenvolvedores','Comercial','Marketing','Expansão','Consultoria'],responsavel:'Compartilhado',frequencia:'mensal',etapas:[
+        {nome:'Cadastrar novos colaboradores no sistema (terças à tarde)',dia:0,descricao:'Todas as terças-feiras à tarde, após a integração, a BP deve incluir os novos colaboradores no sistema seguindo a planilha de admissão. Os colaboradores cadastrados vão automaticamente para a aba de Acompanhamentos com os marcos de 7, 30, 45 e 90 dias.'},
         {nome:'Acompanhamento de 7 dias — mensagem no Teams',dia:7,descricao:'Com 7 dias de empresa, enviar mensagem de apresentação no Teams para o novo colaborador. A mensagem deve: apresentar a BP, perguntar como estão os primeiros dias, verificar acesso às ferramentas, se o onboarding cobriu o essencial e se há dúvidas sobre benefícios ou processos.'},
-        {nome:'Acompanhamento de 20 dias — reunião rápida (15min)',dia:20,descricao:'Com 20 dias, agendar bate-papo rápido de 15 minutos com o colaborador. Roteiro da conversa: Em uma palavra, como foram essas primeiras semanas? O que surpreendeu (positiva ou negativamente)? Quem mais ajudou? Está à vontade pra tirar dúvidas? Sabe o que a empresa espera nos próximos 3 meses? Prioridades claras? Algo travando o dia a dia? Já teve 1:1 com o líder? O que quer aprender/desenvolver? Nota de 0 a 10 para a experiência.'},
+        {nome:'Acompanhamento de 30 dias — reunião rápida (15min)',dia:30,descricao:'Com 30 dias, agendar bate-papo rápido de 15 minutos com o colaborador. Roteiro da conversa: Em uma palavra, como foram essas primeiras semanas? O que surpreendeu (positiva ou negativamente)? Quem mais ajudou? Está à vontade pra tirar dúvidas? Sabe o que a empresa espera nos próximos 3 meses? Prioridades claras? Algo travando o dia a dia? Já teve 1:1 com o líder? O que quer aprender/desenvolver? Nota de 0 a 10 para a experiência.'},
         {nome:'AVE 45 dias — chega na Qulture.Rocks com 35 dias',dia:35,descricao:'A avaliação de experiência de 45 dias chega na Qulture.Rocks quando o colaborador completa 35 dias. A BP deve monitorar a cada 2 dias os prazos na aba de Acompanhamentos. Na Qulture.Rocks: Reviews → Avaliação de Experiência 45 dias → Configurações → Participantes → verificar status da autoavaliação e avaliação do líder (enviada = respondida, não iniciada = pendente).'},
         {nome:'Cobrar AVE 45 dias — acompanhar líder e colaborador',dia:45,descricao:'Monitorar status e cobrar conforme situação: ninguém respondeu → cobrar ambos; só colaborador respondeu → cobrar líder; só líder respondeu → pedir que líder fale com colaborador; ambos responderam → oferecer participar da devolutiva. Registrar situação da AVE no campo de observações do acompanhamento com resumo da avaliação. Anexar PDF da apresentação gerada pelo prompt.'},
         {nome:'AVE 90 dias — chega na Qulture.Rocks com 80 dias',dia:80,descricao:'A avaliação de experiência de 90 dias chega na Qulture.Rocks quando o colaborador completa 80 dias. Mesmo processo de monitoramento da AVE de 45 dias: verificar a cada 2 dias na aba de Acompanhamentos e na Qulture.Rocks.'},
@@ -13352,14 +13431,14 @@ function _seedProcessosBP(){
       ],alertas:[
         'Cadastro de novos colaboradores: todas as terças à tarde, após integração.',
         'Acompanhamento de 7 dias: mensagem de apresentação da BP no Teams.',
-        'Acompanhamento de 20 dias: reunião rápida de 15 minutos (agendar com antecedência).',
+        'Acompanhamento de 30 dias: reunião rápida de 15 minutos (agendar com antecedência).',
         'AVE 45 dias chega na Qulture.Rocks com 35 dias — começar a monitorar.',
         'AVE 90 dias chega na Qulture.Rocks com 80 dias — começar a monitorar.',
         'Monitorar prazos das AVEs a cada 2 dias na aba de Acompanhamentos.',
         'Na Qulture.Rocks: Reviews → Avaliação de Experiência → Configurações → Participantes.',
         'Registrar situação da AVE + resumo no campo de observações. Anexar PDF da apresentação.',
         'Indicadores: "+xd" = ainda não deu o prazo / "-xd" = já passou do prazo.'
-      ],observacoes:'O acompanhamento é contínuo desde a admissão. Os marcos de 7 e 20 dias são conduzidos exclusivamente pela BP. Os marcos de 45 e 90 dias envolvem avaliação formal na Qulture.Rocks com autoavaliação do colaborador e avaliação do líder. A BP é responsável por monitorar e cobrar as respostas.',links:[],
+      ],observacoes:'O acompanhamento é contínuo desde a admissão. Os marcos de 7 e 30 dias são conduzidos exclusivamente pela BP. Os marcos de 45 e 90 dias envolvem avaliação formal na Qulture.Rocks com autoavaliação do colaborador e avaliação do líder. A BP é responsável por monitorar e cobrar as respostas.',links:[],
       msgLider:'Olá {nome},\n\nA avaliação de experiência (45/90 dias) do(a) {colaborador} se encerra no dia {data}.\n\nModelos de cobrança conforme situação:\n\n📌 Ninguém respondeu:\nA avaliação de vocês dois ainda está pendente. Essa etapa é importante para que o colaborador receba um feedback formal sobre os primeiros meses. Caso ache necessário, posso participar da devolutiva.\n\n📌 Só colaborador respondeu:\nEstá pendente a sua avaliação, o(a) {colaborador} já respondeu. Quando concluir, me avise.\n\n📌 Só líder respondeu:\nEstá pendente a avaliação dele(a), a sua já foi respondida. Pode falar com ele(a), por favor?\n\n📌 Ambos responderam:\nVi que vocês dois já responderam. Caso ache necessário, posso participar da devolutiva.\n\nFico à disposição! 💚',
       msgColab:'Oii, {nome}! Tudo bem? 😊\nVocê está completando sua primeira semana na Planning e eu queria passar aqui para me apresentar e entender como estão sendo esses primeiros dias para você.\n\nEu sou a {bp}, Business Partner (BP) do seu departamento. Estou aqui para apoiar sua integração, acompanhar sua experiência e ajudar no que for preciso ao longo dessa jornada.\n\nPara eu conseguir te apoiar da melhor forma, queria te ouvir sobre alguns pontos:\n1. Como você está se sentindo nessa primeira semana?\n2. Você já conseguiu acesso a todas as ferramentas necessárias para realizar o seu trabalho?\n3. Seu onboarding cobriu as informações essenciais para você?\n4. Ficou alguma dúvida sobre benefícios ou processos internos?\n\nFico à disposição! Um abraço!',
       msgFormal:'Oii, {nome}! Tudo bem? 😊\nGostaria de agendar um bate-papo rápido, de cerca de 15 minutinhos, para ouvir como está sendo essa fase inicial, o que tem sido positivo e se há algo que possamos melhorar.\n\nComo está sua disponibilidade para esta semana?\n\n--- ROTEIRO DA CONVERSA DE 20 DIAS ---\n\nEm uma palavra, como foram essas primeiras semanas?\n\n1. O que mais te surpreendeu — positiva ou negativamente — desde que chegou?\n2. Quem mais te ajudou nessas primeiras semanas? Como tem sido essa troca?\n3. Você se sente à vontade pra tirar dúvidas com o time, ou ainda tá naquela fase de \"não quero incomodar\"?\n4. Se eu te pedisse agora pra explicar o que a empresa espera de você nos próximos 3 meses, o que você diria?\n5. Suas prioridades estão claras, ou ainda sente que tá navegando sem mapa?\n6. Tem alguma coisa que tá travando seu dia a dia? Acesso, sistema, informação que falta?\n7. Já teve algum momento de conversa individual com seu líder? Como você se sentiu?\n8. O que você gostaria de aprender ou desenvolver nos próximos meses aqui?\n9. De 0 a 10, que nota você dá pra sua experiência até aqui? O que faria essa nota subir?',
