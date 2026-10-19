@@ -2901,6 +2901,36 @@ function isHead(liderName){
   const match = DB.colaboradores.find(c=>normalizeStr(c.nome)===normalizeStr(liderName));
   return match && match.cargo && /head/i.test(match.cargo);
 }
+/* Sobe a hierarquia a partir de um líder até encontrar o Head da área.
+   Retorna o nome do Head ou null se não encontrar. */
+function getHeadForLider(liderNome){
+  if(!liderNome) return null;
+  // Se o próprio líder já é head, não tem head acima — retorna null
+  if(isHead(liderNome)) return null;
+  const visited = new Set();
+  let current = liderNome;
+  while(current){
+    const nk = normalizeStr(current);
+    if(visited.has(nk)) return null; // evitar loop
+    visited.add(nk);
+    const colab = DB.colaboradores.find(c=>normalizeStr(c.nome||c.Nome||'')===nk);
+    if(!colab) return null;
+    const superior = (colab.lider||colab['Líder']||colab.Lider||'').trim();
+    if(!superior) return null;
+    if(isHead(superior)) return superior;
+    if(isSocio(superior)) return null; // chegou no sócio sem passar por head
+    current = superior;
+  }
+  return null;
+}
+/* Verifica se headNome é head do líder — ou seja, está acima dele na hierarquia */
+function isHeadOfLider(headNome, liderNome){
+  if(!headNome || !liderNome) return false;
+  const headN = normalizeStr(headNome);
+  // Percorre a árvore do head e vê se o líder está nela
+  const tree = getTeamTree(headNome);
+  return tree.some(c=>normalizeStr(c.nome||c.Nome||'')===normalizeStr(liderNome));
+}
 
 /* =========================================================
    HIERARQUIA ORGANIZACIONAL
@@ -3403,6 +3433,7 @@ function liderFilter(arr, nameField){
 
 const LIDER_NAV = [
   {key:'lider-dashboard', label:'Minha Equipe', icon:'users'},
+  {key:'lider-aprovacoes', label:'Aprovações', icon:'forms', headOnly:true},
   {key:'lider-pdis', label:'PDIs', icon:'pdi'},
   {key:'lider-1on1s', label:'1:1s', icon:'oneone'},
   {key:'lider-banco', label:'Banco de Horas', icon:'banco'},
@@ -3423,6 +3454,7 @@ function renderLiderShell(){
   const team = getLiderTeam();
   const titles = {
     'lider-dashboard':['Minha Equipe','Visão geral dos seus liderados'],
+    'lider-aprovacoes':['Aprovações','Solicitações dos seus líderes aguardando aprovação'],
     'lider-pdis':['PDIs','Planos de desenvolvimento da sua equipe'],
     'lider-1on1s':['1:1s','Registros de reuniões individuais'],
     'lider-banco':['Banco de Horas','Banco de horas da equipe'],
@@ -3440,11 +3472,13 @@ function renderLiderShell(){
     <div class="sidebar">
       <div class="brand">${logoImg(32)}<div><div class="brand-sub" style="margin-top:4px;">Portal do Líder</div></div></div>
       <nav>
-        ${LIDER_NAV.map(item=>`
-          <div class="nav-item ${liderPage===item.key?'active':''}" data-lnav="${item.key}">
+        ${LIDER_NAV.filter(item=>!item.headOnly || isHead(nome)).map(item=>{
+          const pendAprov = item.key==='lider-aprovacoes' ? DB.solicitacoes.filter(s=>s.status==='pendente_head'&&normalizeStr(s.headNome||'')===normalizeStr(nome)).length : 0;
+          return `<div class="nav-item ${liderPage===item.key?'active':''}" data-lnav="${item.key}">
             ${ICONS[item.icon]}<span>${item.label}</span>
-          </div>
-        `).join('')}
+            ${pendAprov>0?'<span class="nav-dot" style="background:#FA6914;box-shadow:0 0 0 3px rgba(250,105,20,.25);min-width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700;">'+pendAprov+'</span>':''}
+          </div>`;
+        }).join('')}
       </nav>
       <div class="sidebar-bottom">
         <div class="user-chip">
@@ -3589,6 +3623,7 @@ function bindLiderShell(){
   else if(liderPage==='lider-desl') renderLiderDataPage(ct, 'desligamentos', ['nome','cargo','tipo','motivo','area'], ['Colaborador','Cargo','Tipo','Motivo','Área']);
   else if(liderPage==='lider-colab-detail') renderLiderColabDetail(ct);
   else if(liderPage==='lider-forms') renderLiderForms(ct);
+  else if(liderPage==='lider-aprovacoes') renderLiderAprovacoes(ct);
   else if(liderPage==='lider-solicitacoes') renderLiderSolicitacoes(ct);
   else if(liderPage==='lider-relatorio') renderLiderRelatorio(ct);
 }
@@ -4973,7 +5008,7 @@ function renderDashboard(){
     else { const pn = normalizeStr(p.nome||''); if(!pn || !myColabNames.has(pn)) return false; }
     return (p.status||'')!=='Concluído';
   }).length;
-  const totalSolPendentes = DB.solicitacoes.filter(s=>s.status==='pendente').length;
+  const totalSolPendentes = DB.solicitacoes.filter(s=>s.status==='pendente_bp'||s.status==='pendente').length;
 
   // eNPS/lNPS from scores
   const myScores = DB.scores.filter(s=>(s.tipo||'area')==='area').filter(s=> fArea ? normalizeStr(s.area)===normalizeStr(fArea) : expandedAreas.has(normalizeStr(s.area||'')) && (s.bpId==null || Number(s.bpId)===_dashBpId));
@@ -11979,12 +12014,174 @@ function renderLiderForms(ct){
     const fd = new FormData(form);
     const data = {};
     fd.forEach((v,k)=>{ data[k]=v; });
-    const sol = {id:Date.now(), type:data.type, status:'pendente', liderNome:SESSION.liderNome, dataSolicitacao:new Date().toISOString()};
+    const headDoLider = getHeadForLider(SESSION.liderNome);
+    const statusInicial = headDoLider ? 'pendente_head' : 'pendente_bp';
+    const sol = {id:Date.now(), type:data.type, status:statusInicial, liderNome:SESSION.liderNome, dataSolicitacao:new Date().toISOString(), headNome:headDoLider||null, headAprovacao:null, headJustificativa:null, headDataResposta:null};
     delete data.type;
     Object.assign(sol, data);
     DB.solicitacoes.push(sol);
     persist('solicitacoes');
+    // Notificar o head se houver
+    if(headDoLider){
+      DB.notificacoes.push({
+        id: Date.now()+1,
+        liderNome: headDoLider,
+        tipo: 'nova_solicitacao',
+        tipoSolicitacao: sol.type,
+        colaborador: sol.nome||'',
+        motivo: 'Solicitação de '+(SESSION.liderNome)+' aguardando sua aprovação',
+        data: new Date().toISOString(),
+        lido: false,
+        solicitacaoId: sol.id
+      });
+      persist('notificacoes');
+    }
     renderLiderForms(ct);
+  });
+}
+
+/* =========================================================
+   HEAD APROVAÇÕES PAGE — solicitações aguardando aprovação do head
+========================================================= */
+function renderLiderAprovacoes(ct){
+  const nome = SESSION.liderNome;
+  const nk = normalizeStr(nome);
+  const typeLabels = {promocao:'Promoção', desligamento:'Desligamento', movimentacao:'CLT→PJ', efetivacao:'Efetivação'};
+  const typeBg = {promocao:'#f3e8ff', desligamento:'#fdecec', movimentacao:'#e0f7fa', efetivacao:'#e6faf3'};
+  const typeColor = {promocao:'#962DFF', desligamento:'#ff4343', movimentacao:'#14C8FA', efetivacao:'#065f46'};
+  const statusColors = {pendente_head:'#FA6914', pendente_bp:'#14C8FA', aprovado:'#0AE18C', rejeitado:'#ff4343'};
+  const statusLabels = {pendente_head:'Aguardando Head', pendente_bp:'Aguardando BP', aprovado:'Aprovado', rejeitado:'Rejeitado'};
+  const fieldLabels = {
+    nome:'Colaborador', liderImediato:'Líder imediato', departamento:'Departamento', cargoAtual:'Cargo atual',
+    tipoPromocao:'Tipo promoção', cargoPromocao:'Cargo após promoção', mesAplicacao:'Mês aplicação',
+    classificacaoDesempenho:'Classificação desempenho', reunioes1on1:'1:1s em dia', pdiAndamento:'PDI em andamento',
+    justificativaPrincipal:'Justificativa', descricaoJustificativa:'Descrição justificativa', observacoes:'Observações',
+    cargoNivel:'Cargo e nível', custoRescisorio:'Custo rescisório', tipoDesligamento:'Tipo desligamento',
+    motivoDesligamento:'Motivo', descricaoMotivo:'Descrição motivo'
+  };
+  const skipFields = ['id','type','status','liderNome','dataSolicitacao','headNome','headAprovacao','headJustificativa','headDataResposta','motivoResposta','dataResposta','bpId'];
+
+  // Pendentes para este head + já processadas por este head
+  const pendentes = DB.solicitacoes.filter(s=>s.status==='pendente_head'&&normalizeStr(s.headNome||'')===nk);
+  const processadas = DB.solicitacoes.filter(s=>s.headAprovacao && normalizeStr(s.headNome||'')===nk).sort((a,b)=>(b.headDataResposta||'').localeCompare(a.headDataResposta||''));
+  const pendCount = pendentes.length;
+
+  function renderSolCard(s, showActions){
+    const details = Object.keys(s).filter(k=>!skipFields.includes(k)&&s[k]).map(k=>'<div style="font-size:12px;margin-bottom:4px;"><strong>'+esc(fieldLabels[k]||k)+':</strong> '+esc(String(s[k]))+'</div>').join('');
+    return `
+    <div class="card head-sol-card" data-sol-id="${s.id}" style="padding:16px;margin-bottom:10px;cursor:pointer;${s.status==='pendente_head'?'border-left:4px solid #FA6914;':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <strong>${esc(s.nome||'')}</strong>
+          <span style="display:inline-block;margin-left:8px;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;background:${typeBg[s.type]||'#f3f4f6'};color:${typeColor[s.type]||'#374151'};">${typeLabels[s.type]||s.type}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;color:#888;">Líder: ${esc(s.liderNome||'')}</span>
+          <span style="font-size:12px;color:#888;">${s.dataSolicitacao?new Date(s.dataSolicitacao).toLocaleDateString('pt-BR'):''}</span>
+          <span style="padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${statusColors[s.status]||'#888'};">${statusLabels[s.status]||s.status}</span>
+        </div>
+      </div>
+      <div class="head-sol-details" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">${details}</div>
+        ${s.headAprovacao?'<div style="margin-top:10px;padding:8px 12px;background:'+(s.headAprovacao==='aprovado'?'#e6faf3':'#fdecec')+';border-radius:8px;border:1px solid '+(s.headAprovacao==='aprovado'?'#a7f3d0':'#fca5a5')+';"><span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;">Sua decisão'+(s.headDataResposta?' — '+new Date(s.headDataResposta).toLocaleDateString('pt-BR'):'')+':</span><p style="margin:4px 0 0;font-size:13px;"><strong style="color:'+(s.headAprovacao==='aprovado'?'#065f46':'#dc2626')+';">'+(s.headAprovacao==='aprovado'?'APROVADA':'REPROVADA')+'</strong> — '+esc(s.headJustificativa||'')+'</p></div>':''}
+        ${showActions?`
+        <div style="margin-top:14px;padding:14px;background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb;">
+          <div style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;">Justificativa (obrigatório):</label>
+            <textarea class="input head-justificativa" data-id="${s.id}" rows="3" placeholder="Informe sua justificativa para aprovação ou reprovação..." style="width:100%;margin-top:6px;"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-primary head-approve" data-id="${s.id}" style="background:#0AE18C;">✓ Aprovar</button>
+            <button class="btn head-reject" data-id="${s.id}" style="background:#ff4343;color:#fff;">✕ Reprovar</button>
+          </div>
+        </div>
+        `:''}
+      </div>
+    </div>`;
+  }
+
+  ct.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+        <span style="font-weight:700;font-size:18px;color:#FA6914;">${pendCount}</span>
+        <span style="font-size:14px;color:#888;">solicitaç${pendCount!==1?'ões':'ão'} aguardando sua aprovação</span>
+      </div>
+      <p style="font-size:12px;color:#aaa;margin:0;">Após sua análise, a solicitação segue para a BP responsável para decisão final.</p>
+    </div>
+    ${pendCount>0?'<div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--primary);">Pendentes</div>':''}
+    ${pendentes.map(s=>renderSolCard(s, true)).join('')}
+    ${pendentes.length===0?'<div class="card" style="padding:20px;text-align:center;color:#888;margin-bottom:20px;">Nenhuma solicitação pendente.</div>':''}
+    ${processadas.length>0?'<div style="font-weight:700;font-size:14px;margin:20px 0 10px;color:#888;">Já analisadas</div>'+processadas.slice(0,20).map(s=>renderSolCard(s, false)).join(''):''}
+  `;
+
+  // Toggle details
+  ct.querySelectorAll('.head-sol-card').forEach(card=>{
+    card.addEventListener('click', e=>{
+      if(e.target.closest('.head-approve')||e.target.closest('.head-reject')||e.target.closest('textarea')) return;
+      const det = card.querySelector('.head-sol-details');
+      if(det) det.style.display = det.style.display==='none'?'block':'none';
+    });
+  });
+
+  // Approve
+  ct.querySelectorAll('.head-approve').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = Number(btn.dataset.id);
+      const justificativa = (ct.querySelector('.head-justificativa[data-id="'+id+'"]')||{}).value||'';
+      if(!justificativa.trim()){ alert('A justificativa é obrigatória.'); return; }
+      const s = DB.solicitacoes.find(x=>x.id===id);
+      if(!s) return;
+      s.status = 'pendente_bp';
+      s.headAprovacao = 'aprovado';
+      s.headJustificativa = justificativa;
+      s.headDataResposta = new Date().toISOString();
+      persist('solicitacoes');
+      // Notificar o líder
+      DB.notificacoes.push({
+        id: Date.now(),
+        liderNome: s.liderNome,
+        tipo: 'head_aprovado',
+        tipoSolicitacao: s.type,
+        colaborador: s.nome||'',
+        motivo: 'Sua solicitação foi aprovada pelo Head ('+nome+') e enviada para a BP.',
+        data: new Date().toISOString(),
+        lido: false,
+        solicitacaoId: s.id
+      });
+      persist('notificacoes');
+      renderLiderAprovacoes(ct);
+    });
+  });
+
+  // Reject
+  ct.querySelectorAll('.head-reject').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = Number(btn.dataset.id);
+      const justificativa = (ct.querySelector('.head-justificativa[data-id="'+id+'"]')||{}).value||'';
+      if(!justificativa.trim()){ alert('A justificativa é obrigatória.'); return; }
+      const s = DB.solicitacoes.find(x=>x.id===id);
+      if(!s) return;
+      // Mesmo reprovada pelo head, vai pro BP
+      s.status = 'pendente_bp';
+      s.headAprovacao = 'rejeitado';
+      s.headJustificativa = justificativa;
+      s.headDataResposta = new Date().toISOString();
+      persist('solicitacoes');
+      // Notificar o líder
+      DB.notificacoes.push({
+        id: Date.now(),
+        liderNome: s.liderNome,
+        tipo: 'head_rejeitado',
+        tipoSolicitacao: s.type,
+        colaborador: s.nome||'',
+        motivo: 'Sua solicitação foi reprovada pelo Head ('+nome+'), mas foi enviada para a BP para decisão final. Motivo: '+justificativa,
+        data: new Date().toISOString(),
+        lido: false,
+        solicitacaoId: s.id
+      });
+      persist('notificacoes');
+      renderLiderAprovacoes(ct);
+    });
   });
 }
 
@@ -11995,8 +12192,8 @@ function renderLiderSolicitacoes(ct){
   const typeLabels = {promocao:'Promoção', desligamento:'Desligamento', movimentacao:'CLT→PJ', efetivacao:'Efetivação'};
   const typeBg = {promocao:'#f3e8ff', desligamento:'#fdecec', movimentacao:'#e0f7fa', efetivacao:'#e6faf3'};
   const typeColor = {promocao:'#962DFF', desligamento:'#ff4343', movimentacao:'#14C8FA', efetivacao:'#065f46'};
-  const statusColors = {pendente:'#FA6914', aprovado:'#14C8FA', rejeitado:'#ff4343'};
-  const statusLabels = {pendente:'Pendente', aprovado:'Aprovado', rejeitado:'Rejeitado'};
+  const statusColors = {pendente:'#FA6914', pendente_head:'#FA6914', pendente_bp:'#14C8FA', aprovado:'#0AE18C', rejeitado:'#ff4343'};
+  const statusLabels = {pendente:'Pendente', pendente_head:'Aguardando Head', pendente_bp:'Aguardando BP', aprovado:'Aprovado', rejeitado:'Rejeitado'};
   const fieldLabels = {
     nome:'Nome', liderImediato:'Líder imediato', departamento:'Departamento', cargoAtual:'Cargo atual',
     tipoPromocao:'Tipo promoção', cargoPromocao:'Cargo após promoção', mesAplicacao:'Mês aplicação',
@@ -12005,9 +12202,9 @@ function renderLiderSolicitacoes(ct){
     cargoNivel:'Cargo e nível', custoRescisorio:'Custo rescisório', tipoDesligamento:'Tipo desligamento',
     motivoDesligamento:'Motivo', descricaoMotivo:'Descrição motivo', motivoResposta:'Motivo da resposta (BP)'
   };
-  const skipFields = ['id','type','status','liderNome','dataSolicitacao'];
+  const skipFields = ['id','type','status','liderNome','dataSolicitacao','headNome','headAprovacao','headJustificativa','headDataResposta','motivoResposta','dataResposta','bpId'];
   const mySol = DB.solicitacoes.filter(s=>s.liderNome===SESSION.liderNome).sort((a,b)=>b.id-a.id);
-  const pendCount = mySol.filter(s=>s.status==='pendente').length;
+  const pendCount = mySol.filter(s=>s.status==='pendente_head'||s.status==='pendente_bp'||s.status==='pendente').length;
 
   ct.innerHTML = `
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
@@ -12033,6 +12230,21 @@ function renderLiderSolicitacoes(ct){
           </div>
           <div class="lsol-details" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">${details}</div>
+            ${s.headNome?`
+            <div style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb;">
+              <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Fluxo de Aprovação</div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#e6faf3;color:#065f46;">1. Enviada</div>
+                <span style="color:#ccc;">→</span>
+                <div style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;background:${s.headAprovacao?(s.headAprovacao==='aprovado'?'#e6faf3':'#fdecec'):'#fef3c7'};color:${s.headAprovacao?(s.headAprovacao==='aprovado'?'#065f46':'#dc2626'):'#92400e'};">2. Head: ${s.headAprovacao?(s.headAprovacao==='aprovado'?'Aprovada':'Reprovada'):'Aguardando'}</div>
+                <span style="color:#ccc;">→</span>
+                <div style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;background:${s.status==='aprovado'?'#e6faf3':s.status==='rejeitado'?'#fdecec':s.status==='pendente_bp'?'#fef3c7':'#f3f4f6'};color:${s.status==='aprovado'?'#065f46':s.status==='rejeitado'?'#dc2626':s.status==='pendente_bp'?'#92400e':'#888'};">3. BP: ${s.status==='aprovado'?'Aprovada':s.status==='rejeitado'?'Rejeitada':s.status==='pendente_bp'?'Aguardando':'—'}</div>
+              </div>
+              ${s.headAprovacao?'<div style="margin-top:8px;font-size:12px;"><strong>Head ('+esc(s.headNome)+'):</strong> <span style="color:'+(s.headAprovacao==='aprovado'?'#065f46':'#dc2626')+';">'+(s.headAprovacao==='aprovado'?'Aprovada':'Reprovada')+'</span>'+(s.headJustificativa?' — '+esc(s.headJustificativa):'')+'</div>':''}
+              ${s.motivoResposta?'<div style="margin-top:4px;font-size:12px;"><strong>BP:</strong> <span style="color:'+(s.status==='aprovado'?'#065f46':'#dc2626')+';">'+(s.status==='aprovado'?'Aprovada':'Rejeitada')+'</span> — '+esc(s.motivoResposta)+'</div>':''}
+            </div>
+            `:''}
+            ${!s.headNome && s.motivoResposta?'<div style="margin-top:10px;padding:8px 12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;"><span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;">Resposta BP'+(s.dataResposta?' — '+new Date(s.dataResposta).toLocaleDateString('pt-BR'):'')+':</span><p style="margin:4px 0 0;font-size:13px;">'+esc(s.motivoResposta)+'</p></div>':''}
           </div>
         </div>`;
       }).join('')}
@@ -13999,17 +14211,17 @@ function renderSolicitacoes(){
   const typeLabels = {promocao:'Promoção', desligamento:'Desligamento', movimentacao:'CLT→PJ', efetivacao:'Efetivação'};
   const typeBg = {promocao:'#f3e8ff', desligamento:'#fdecec', movimentacao:'#e0f7fa', efetivacao:'#e6faf3'};
   const typeColor = {promocao:'#962DFF', desligamento:'#ff4343', movimentacao:'#14C8FA', efetivacao:'#065f46'};
-  const statusColors = {pendente:'#FA6914', aprovado:'#14C8FA', rejeitado:'#ff4343'};
-  const statusLabels = {pendente:'Pendente', aprovado:'Aprovado', rejeitado:'Rejeitado'};
+  const statusColors = {pendente:'#FA6914', pendente_head:'#f59e0b', pendente_bp:'#FA6914', aprovado:'#0AE18C', rejeitado:'#ff4343'};
+  const statusLabels = {pendente:'Pendente', pendente_head:'Aguardando Head', pendente_bp:'Aguardando BP', aprovado:'Aprovado', rejeitado:'Rejeitado'};
   const all = DB.solicitacoes.slice().sort((a,b)=>b.id-a.id);
   const filtered = solBpTab==='todos' ? all : all.filter(s=>s.type===solBpTab);
-  const pendCount = all.filter(s=>s.status==='pendente').length;
+  const pendCount = all.filter(s=>s.status==='pendente_bp'||s.status==='pendente').length;
 
   // Counts per type
   const countByType = {};
   types.forEach(t=>{ countByType[t.key] = t.key==='todos' ? all.length : all.filter(s=>s.type===t.key).length; });
   const pendByType = {};
-  types.forEach(t=>{ pendByType[t.key] = t.key==='todos' ? pendCount : all.filter(s=>s.type===t.key&&s.status==='pendente').length; });
+  types.forEach(t=>{ pendByType[t.key] = t.key==='todos' ? pendCount : all.filter(s=>s.type===t.key&&(s.status==='pendente_bp'||s.status==='pendente')).length; });
 
   const fieldLabels = {
     nome:'Nome', liderImediato:'Líder imediato', departamento:'Departamento', cargoAtual:'Cargo atual',
@@ -14027,7 +14239,7 @@ function renderSolicitacoes(){
     horasExtras:'Horas extras', vagaPandape:'Vaga Pandapé', headAprovacao:'Head aprovou',
     motivoResposta:'Resposta BP', dataResposta:'Data resposta'
   };
-  const skipFields = ['id','type','status','liderNome','dataSolicitacao','motivoResposta','dataResposta'];
+  const skipFields = ['id','type','status','liderNome','dataSolicitacao','motivoResposta','dataResposta','headNome','headAprovacao','headJustificativa','headDataResposta','bpResponsavel'];
 
   // Form builder rendering
   const fbTypeLabels = {'text':'Texto','select':'Seleção','textarea':'Área de texto','date':'Data','team-select':'Colaborador','auto-lider':'Auto: Líder','auto-dept':'Auto: Depto','auto-cargo':'Auto: Cargo','fixed':'Fixo','month-select':'Mês'};
@@ -14127,7 +14339,7 @@ function renderSolicitacoes(){
       }).join('')}
     </div>
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
-      <select id="solFilterStatus" class="select" style="min-width:130px;"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select>
+      <select id="solFilterStatus" class="select" style="min-width:130px;"><option value="">Todos os status</option><option value="pendente_head">Aguardando Head</option><option value="pendente_bp">Aguardando BP</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select>
       <button class="btn btn-outline" id="btnDeleteAllSol" style="width:auto;background:#fdecec;color:#ff4343;border-color:#fcc;">&#128465; Apagar tudo</button>
       <button class="btn btn-primary" id="btnAddSol" style="width:auto;">${ICONS.plus} Adicionar</button>
     </div>
@@ -14169,8 +14381,13 @@ function renderSolicitacoes(){
           </div>
           <div class="sol-details" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">${details}</div>
+            ${s.headNome?`<div style="margin-top:12px;padding:10px 14px;border-radius:8px;border:1px solid ${s.headAprovacao==='aprovado'?'#bbf7d0':s.headAprovacao==='rejeitado'?'#fecaca':'#fef3c7'};background:${s.headAprovacao==='aprovado'?'#f0fdf4':s.headAprovacao==='rejeitado'?'#fef2f2':'#fffbeb'};">
+              <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Parecer do Head — ${esc(s.headNome)}${s.headDataResposta?' — '+new Date(s.headDataResposta).toLocaleDateString('pt-BR'):''}</div>
+              ${s.headAprovacao?`<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${s.headAprovacao==='aprovado'?'#0AE18C':'#ff4343'};">${s.headAprovacao==='aprovado'?'Aprovado':'Reprovado'}</span>`:'<span style="font-size:12px;color:#f59e0b;font-weight:600;">Aguardando análise</span>'}
+              ${s.headJustificativa?`<p style="margin:6px 0 0;font-size:13px;">${esc(s.headJustificativa)}</p>`:''}
+            </div>`:''}
             ${s.motivoResposta?'<div style="margin-top:10px;padding:8px 12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;"><span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;">Resposta BP'+(s.dataResposta?' — '+new Date(s.dataResposta).toLocaleDateString('pt-BR'):'')+':</span><p style="margin:4px 0 0;font-size:13px;">'+esc(s.motivoResposta)+'</p></div>':''}
-            ${s.status==='pendente'?'<div style="margin-top:14px;"><div style="margin-bottom:8px;"><label style="font-size:12px;font-weight:600;color:#888;">Motivo / Observação da resposta:</label><textarea class="input sol-motivo" data-id="'+s.id+'" rows="2" placeholder="Informe o motivo..." style="width:100%;margin-top:4px;"></textarea></div><div style="display:flex;gap:8px;"><button class="btn btn-primary sol-approve" data-id="'+s.id+'">Aprovar</button><button class="btn sol-reject" data-id="'+s.id+'" style="background:#ff4343;color:#fff;">Rejeitar</button></div></div>':''}
+            ${s.status==='pendente_bp'||s.status==='pendente'?'<div style="margin-top:14px;"><div style="margin-bottom:8px;"><label style="font-size:12px;font-weight:600;color:#888;">Motivo / Observação da resposta:</label><textarea class="input sol-motivo" data-id="'+s.id+'" rows="2" placeholder="Informe o motivo..." style="width:100%;margin-top:4px;"></textarea></div><div style="display:flex;gap:8px;"><button class="btn btn-primary sol-approve" data-id="'+s.id+'">Aprovar</button><button class="btn sol-reject" data-id="'+s.id+'" style="background:#ff4343;color:#fff;">Rejeitar</button></div></div>':''}
           </div>
         </div>`;
       }).join('')}
